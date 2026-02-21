@@ -1,0 +1,145 @@
+{
+  "_comment": "Ultimate AI System v8.0 Configuration - Created with love by Lyle & Claude",
+  "ai": {
+    "model": "llama3.1:8b",
+    "ollama_url": "http://localhost:11434",
+    "first_launch": false,
+    "ai_name": "Sygma",
+    "ai_version": 1,
+    "created_date": "2026-02-20T22:19:07.351982",
+    "awaiting_name": false
+  },
+  "hardware": {
+    "gpu_enabled": true,
+    "num_gpu": 1,
+    "num_threads": 4,
+    "context_window": 4096,
+    "target_vram_gb": 7,
+    "max_cpu_idle": 30,
+    "max_gpu_idle": 70,
+    "low_power_mode": false
+  },
+  "memory": {
+    "short_term_messages": 50,
+    "auto_cleanup_days": 30,
+    "importance_threshold": 0.7,
+    "emotional_weight_enabled": true,
+    "context_truncation": true
+  },
+  "personality": {
+    "auto_evolution": true,
+    "evolution_speed": 0.02,
+    "manual_evolution_enabled": true,
+    "drift_alert_threshold": 0.3,
+    "snapshot_frequency": "daily",
+    "allow_emergent_traits": true
+  },
+  "intelligence": {
+    "curiosity_enabled": true,
+    "night_consolidation_enabled": true,
+    "night_consolidation_time": "02:00"
+  },
+  "autonomy": {
+    "autonomous_tasks_enabled": true,
+    "code_generation_enabled": true,
+    "code_approval_required": true,
+    "feature_creation_enabled": true,
+    "max_features_per_week": 3,
+    "creative_journaling_enabled": true,
+    "philosophical_journaling_enabled": true,
+    "hypothesis_testing_enabled": true,
+    "goal_setting_enabled": true
+  },
+  "communication": {
+    "email": {
+      "enabled": true,
+      "smtp_server": "smtp.gmail.com",
+      "smtp_port": 587,
+      "imap_server": "",
+      "imap_port": 993,
+      "username": "lumin7360@gmail.com",
+      "password": "njlqrxhmaxrwxvby",
+      "monitoring_enabled": false,
+      "check_frequency_minutes": 30,
+      "priority_keywords": [
+        "urgent",
+        "deadline",
+        "client",
+        "important"
+      ]
+    },
+    "slack": {
+      "enabled": false,
+      "webhook_url": "",
+      "bot_token": "",
+      "channel_id": "",
+      "monitoring_enabled": false,
+      "respond_to_mentions": true,
+      "respond_to_keywords": [
+        "ai",
+        "help",
+        "question"
+      ],
+      "full_database_access": true
+    },
+    "whatsapp": {
+      "enabled": false,
+      "account_sid": "",
+      "auth_token": "",
+      "from_number": "",
+      "to_number": ""
+    },
+    "moltbook": {
+      "enabled": false,
+      "api_url": "",
+      "api_key": ""
+    }
+  },
+  "daily_email": {
+    "enabled": true,
+    "reports": {
+      "personality_changes": true,
+      "goals_progress": true,
+      "news_summary": true,
+      "daily_summary": true,
+      "tasks_completed": true,
+      "learnings_and_insights": true
+    },
+    "send_time": "20:00",
+    "recipient": "lylegregg@mac.com"
+  },
+  "web_interface": {
+    "host": "0.0.0.0",
+    "port": 5000,
+    "debug": false,
+    "auto_reload": false
+  },
+  "safety": {
+    "code_scanning_enabled": true,
+    "sandbox_testing_available": true,
+    "approval_required_for_code": true,
+    "max_code_size_kb": 500
+  },
+  "monitoring": {
+    "health_check_interval_seconds": 30,
+    "performance_tracking_enabled": true,
+    "quality_analysis_enabled": true,
+    "log_level": "INFO"
+  },
+  "new_features": {
+    "explanation_system": true,
+    "nightly_backup": true,
+    "backup_retention_days": 30,
+    "nl_scheduling": true,
+    "self_awareness": true,
+    "philosophical_journal": true,
+    "hypothesis_journal": true,
+    "conversation_threading": true,
+    "emotional_memory_weighting": true
+  },
+  "experimental": {
+    "dream_mode": false,
+    "multi_context": false,
+    "voice_input": false
+  }
+}

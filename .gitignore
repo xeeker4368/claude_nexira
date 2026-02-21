@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Runtime data (NEVER commit)
+data/databases/*.db
+*.sqlite
+*.sqlite3
+data/uploads/*
+!data/uploads/.gitkeep
+data/logs/*
+*.log
+!data/logs/.gitkeep
+data/ai_creations/*
+!data/ai_creations/.gitkeep
+data/backups/*
+data/snapshots/*
+
+# Config (user-specific)
+config/user_config.json
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Installation directory
+ultimate_ai_v8/
+/installation/
+
+# Temporary
+*.tmp
+*.temp
+.cache/
+
+# Distribution
+build/
+dist/
+*.egg-info/
