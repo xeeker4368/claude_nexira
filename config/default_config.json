@@ -114,7 +114,7 @@
   "web_interface": {
     "host": "0.0.0.0",
     "port": 5000,
-    "debug": false,
+    "debug": true,
     "auto_reload": false
   },
   "safety": {

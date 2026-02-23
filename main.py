@@ -144,6 +144,7 @@ file_upload_handler = None
 background_scheduler = None
 web_search = None
 creative_svc = None
+image_gen = None
 config = None
 
 def load_config():
@@ -229,6 +230,20 @@ def initialize_system():
     else:
         print("⚠  Creative Workshop service not available")
 
+    # Image Generation Service
+    global image_gen
+    try:
+        from services.image_gen_service import ImageGenService
+        image_gen = ImageGenService(
+            base_dir=BASE_DIR,
+            config=config,
+            ollama_url=config.get('ai', {}).get('ollama_url', 'http://localhost:11434')
+        )
+        print("✓ Image generation service ready")
+    except Exception as img_err:
+        image_gen = None
+        print(f"⚠  Image generation not available: {img_err}")
+
     # Wire Phase 6 services into background scheduler for autonomous use
     if background_scheduler and (web_search or creative_svc):
         background_scheduler.inject_phase6_services(web_search, creative_svc)
@@ -290,6 +305,7 @@ def chat():
 
         # ── Generate AI response ───────────────────────────────────
         response_text, confidence = ai_engine.chat(message, context)
+        import re as _re  # used in trigger detection blocks below
 
         # ── Phase 6: Autonomous action detection ───────────────────
         actions = []
@@ -386,6 +402,29 @@ def chat():
         # ── Search action card ─────────────────────────────────────
         if search_query:
             _log_activity('search', 'Web Search', search_query, None)
+
+        # ── Image generation trigger detection ────────────────────
+        # Detect IMAGE_GEN_NOW: [prompt] in response
+        img_match = _re.search(
+            r'IMAGE_GEN_NOW:\s*(.+?)(?:\n|$)',
+            _re.sub(r'\*+', '', response_text)
+        )
+        if img_match and image_gen:
+            img_prompt = img_match.group(1).strip()
+            success, img_path, img_msg = image_gen.generate(img_prompt)
+            actions.append({
+                'type':    'image_gen',
+                'success': success,
+                'path':    img_path,
+                'prompt':  img_prompt,
+                'message': img_msg
+            })
+            _log_activity('image', 'Image Generated' if success else 'Image Failed',
+                          img_prompt, img_path)
+            # Strip trigger from visible response
+            response_text = _re.sub(
+                r'IMAGE_GEN_NOW:\s*.+?(?:\n|$)', '', response_text
+            ).strip()
 
         # ── Moltbook action detection ──────────────────────────────
         # Detect MOLTBOOK_POST_NOW trigger — strip markdown before matching
@@ -1186,6 +1225,41 @@ def moltbook_log():
     return jsonify({'log': mb.get_log(30)})
 
 
+# ── Image Generation Routes ────────────────────────────────────────
+
+@app.route('/api/images', methods=['GET'])
+def list_images():
+    """List recently generated images"""
+    if not image_gen:
+        return jsonify({'images': [], 'available': False})
+    limit = int(request.args.get('limit', 20))
+    return jsonify({'images': image_gen.list_images(limit), 'available': True})
+
+@app.route('/api/images/generate', methods=['POST'])
+def generate_image():
+    """Manually trigger image generation"""
+    if not image_gen:
+        return jsonify({'error': 'Image generation not available'}), 503
+    data    = request.json or {}
+    prompt  = data.get('prompt', '').strip()
+    if not prompt:
+        return jsonify({'error': 'prompt required'}), 400
+    neg     = data.get('negative_prompt', '')
+    steps   = int(data.get('steps', 25))
+    guidance = float(data.get('guidance', 7.5))
+    success, path, msg = image_gen.generate(prompt, neg, steps, guidance)
+    return jsonify({'success': success, 'path': path, 'message': msg})
+
+@app.route('/api/images/file/<path:filepath>')
+def serve_image(filepath):
+    """Serve a generated image file"""
+    from flask import send_from_directory
+    full_path = os.path.join(BASE_DIR, filepath)
+    directory = os.path.dirname(full_path)
+    filename  = os.path.basename(full_path)
+    return send_from_directory(directory, filename)
+
+
 @app.route('/api/moltbook/save-key', methods=['POST'])
 def moltbook_save_key():
     """Save a Moltbook API key directly (manual entry or update)"""
@@ -1334,7 +1408,7 @@ def creative_generate():
 
     context = {'creative_mode': mode}
     response_text, confidence = ai_engine.chat(full_prompt, context)
-
+    import re as _re
     # Extract first code block if code mode
     content = response_text
     detected_lang = lang
