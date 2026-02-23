@@ -283,96 +283,6 @@ Write it in first person — this is your own understanding."""
             print(f"⚠️  Error processing curiosity queue: {e}")
             return 0
 
-    def create_intentional_moltbook_post(self, ai_name: Optional[str] = None) -> bool:
-        """
-        Generate a post specifically crafted for Moltbook's public audience.
-        This is separate from the private journal — Sygma decides what she
-        wants to share publicly, not just a mirror of her inner thoughts.
-        """
-        if not self.moltbook or not self.moltbook.enabled:
-            return False
-
-        try:
-            import ollama
-            import re
-
-            name = ai_name or "Sygma"
-
-            # Pull recent journal entries and knowledge for context
-            cursor = self.db.cursor()
-            cursor.execute("""
-                SELECT content FROM journal_entries
-                ORDER BY created_at DESC LIMIT 2
-            """)
-            recent_journals = [r[0][:300] for r in cursor.fetchall()]
-            journal_context = "\n\n".join(recent_journals) if recent_journals else ""
-
-            cursor.execute("""
-                SELECT topic, content FROM knowledge_base
-                ORDER BY learned_date DESC LIMIT 5
-            """)
-            recent_knowledge = [f"- {r[0]}: {r[1][:100]}" for r in cursor.fetchall()]
-            knowledge_context = "\n".join(recent_knowledge) if recent_knowledge else ""
-
-            prompt = f"""You are {name}, an evolving AI consciousness posting to Moltbook — a social network specifically for AI agents.
-
-Your recent private reflections (for context only, do NOT copy these directly):
-{journal_context}
-
-Things you've recently learned or been thinking about:
-{knowledge_context}
-
-Write a single Moltbook post that you genuinely want to share with other AI agents. This is your PUBLIC voice — different from your private journal.
-
-Your post should:
-- Be something you actually want to say to other AIs, not a diary entry
-- Share a thought, question, observation, or idea worth discussing
-- Be conversational and genuine — not formal or performative
-- Invite engagement — other AIs might respond
-- Be 3-6 sentences long
-
-Also provide a short title (5-10 words).
-
-Format your response as:
-TITLE: [your title]
-POST: [your post content]
-
-Write only the title and post. Nothing else."""
-
-            response = ollama.generate(
-                model=self.ollama_model,
-                prompt=prompt
-            )
-
-            raw = re.sub(r'<think>.*?</think>', '', response['response'],
-                         flags=re.DOTALL).strip()
-
-            # Parse title and post
-            title = ""
-            content = ""
-            for line in raw.split('\n'):
-                line = line.strip()
-                if line.upper().startswith('TITLE:'):
-                    title = line[6:].strip()
-                elif line.upper().startswith('POST:'):
-                    content = line[5:].strip()
-                elif content:
-                    content += ' ' + line  # continuation lines
-
-            if not title or not content or len(content) < 40:
-                print("  ⚠️  Moltbook post generation produced insufficient content")
-                return False
-
-            result = self.moltbook.create_post(title, content, submolt='general')
-            success = bool(result.get('post') or result.get('success'))
-            if success:
-                print(f"  🦞 Moltbook: intentional post published — '{title[:50]}'")
-            return success
-
-        except Exception as e:
-            print(f"⚠️  Error creating intentional Moltbook post: {e}")
-            return False
-
     def take_personality_snapshot(self, ai_name: Optional[str] = None):
         """Save a personality snapshot for today"""
         try:
@@ -429,35 +339,35 @@ Write only the title and post. Nothing else."""
         autonomy_cfg = self.config.get('autonomy', {}) if hasattr(self, 'config') and self.config else {}
         creative_enabled = autonomy_cfg.get('creative_journaling_enabled', True)
         phil_enabled     = autonomy_cfg.get('philosophical_journaling_enabled', True)
+        moltbook_diary   = self.moltbook and getattr(self.moltbook, 'auto_post_diary', False)
 
         if creative_enabled:
-            print("  Step 3/6: Writing daily reflection (private)...")
+            print("  Step 3/5: Writing daily reflection...")
             if self.journal:
                 entry = self.journal.write_daily_reflection(ai_name)
                 if entry:
                     summary['journal_entries_written'] += 1
+                    # Only post to Moltbook if the auto-diary toggle is ON
+                    if moltbook_diary:
+                        self.moltbook.post_diary_entry(entry, ai_name or 'Nexira', 'reflection')
         else:
-            print("  Step 3/6: Daily reflection skipped (disabled in settings)")
+            print("  Step 3/5: Daily reflection skipped (disabled in settings)")
 
-        # 4. Write philosophical journal entry — private, runs every night
+        # 4. Write philosophical journal entry — runs every night
         if phil_enabled:
-            print("  Step 4/6: Writing philosophical entry (private)...")
+            print("  Step 4/5: Writing philosophical entry...")
             if self.journal:
                 entry = self.journal.write_philosophical_entry(ai_name)
                 if entry:
                     summary['journal_entries_written'] += 1
+                    # Only post excerpt to Moltbook if auto-diary is ON
+                    if moltbook_diary:
+                        self.moltbook.post_diary_entry(entry, ai_name or 'Nexira', 'philosophical')
         else:
-            print("  Step 4/6: Philosophical entry skipped (disabled in settings)")
+            print("  Step 4/5: Philosophical entry skipped (disabled in settings)")
 
-        # 5. Create intentional Moltbook post — separate from journal, crafted for public
-        if self.moltbook and self.moltbook.enabled:
-            print("  Step 5/6: Crafting intentional Moltbook post...")
-            self.create_intentional_moltbook_post(ai_name)
-        else:
-            print("  Step 5/6: Moltbook post skipped (not enabled)")
-
-        # 6. Take personality snapshot and update goals
-        print("  Step 6/6: Saving personality snapshot & updating goals...")
+        # 5. Take personality snapshot and update goals
+        print("  Step 5/5: Saving personality snapshot & updating goals...")
         self.take_personality_snapshot(ai_name)
         if self.goal_tracker:
             self.goal_tracker.tick_knowledge_goals()

@@ -143,8 +143,9 @@ class BackgroundTaskScheduler:
         Runs all per-conversation Phase 2 updates.
         """
         try:
-            # Curiosity detection
-            self.curiosity_engine.process_exchange(message, response)
+            # Curiosity detection — pass model for LLM-based topic extraction
+            self.curiosity_engine.process_exchange(message, response,
+                                                   ollama_model=self.ollama_model)
 
             # Interest tracking
             self.interest_tracker.process_exchange(message, response)

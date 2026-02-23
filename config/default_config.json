@@ -1,7 +1,7 @@
 {
   "_comment": "Ultimate AI System v8.0 Configuration - Created with love by Lyle & Claude",
   "ai": {
-    "model": "qwen3:8b",
+    "model": "llama3.1:8b",
     "ollama_url": "http://localhost:11434",
     "first_launch": false,
     "ai_name": "Sygma",
@@ -151,6 +151,6 @@
     "agent_name": "Sygma",
     "claim_url": "https://www.moltbook.com/claim/moltbook_claim_Tb10S8gXOnVBjrTk1RjA_fZe24pn8lTd",
     "claimed": true,
-    "auto_post_diary": true
+    "auto_post_diary": false
   }
 }

@@ -87,7 +87,8 @@ class GoalTracker:
         except Exception as e:
             print(f"⚠️  Error seeding goals: {e}")
 
-    def update_progress(self, goal_type: str, increment: float = 1.0):
+    def update_progress(self, goal_type: str, increment: float = 1.0,
+                        ai_name: str = None, ollama_model: str = None):
         """
         Increment progress on all active goals of a given type.
         Called automatically based on conversation activity.
@@ -117,15 +118,87 @@ class GoalTracker:
                         UPDATE goals SET status='completed' WHERE id=?
                     """, (goal_id,))
                     print(f"🎯 Goal completed: '{name}'")
-                    self._on_goal_completed(name, goal_type)
+                    self._on_goal_completed(name, goal_type, ai_name, ollama_model)
 
             self.db.commit()
 
         except Exception as e:
             print(f"⚠️  Error updating goal progress: {e}")
 
-    def _on_goal_completed(self, goal_name: str, goal_type: str):
-        """Handle goal completion - log it and optionally set a follow-up goal"""
+    def tick_philosophical_goals(self, journal_entry_count: int,
+                                 ai_name: str = None, ollama_model: str = None):
+        """
+        Update philosophical goals based on journal entry count.
+        'Form a hypothesis about my own consciousness' completes after
+        enough philosophical journal entries have been written.
+        """
+        try:
+            cursor = self.db.cursor()
+            # Philosophical goal target is 1.0 but we measure readiness
+            # by journal engagement — after 10 philosophical entries,
+            # the AI has enough material to have formed a real hypothesis
+            progress = min(100.0, (journal_entry_count / 10.0) * 100)
+            new_value = min(1.0, journal_entry_count / 10.0)
+
+            cursor.execute("""
+                SELECT id, goal_name, current_value FROM goals
+                WHERE goal_type='philosophical' AND status='active'
+            """)
+            for row in cursor.fetchall():
+                goal_id, name, current = row
+                if new_value > current:
+                    cursor.execute("""
+                        UPDATE goals SET current_value=?, progress=?
+                        WHERE id=?
+                    """, (new_value, progress, goal_id))
+                    if new_value >= 1.0:
+                        cursor.execute("""
+                            UPDATE goals SET status='completed' WHERE id=?
+                        """, (goal_id,))
+                        print(f"🎯 Goal completed: '{name}'")
+                        self._on_goal_completed(name, 'philosophical', ai_name, ollama_model)
+
+            self.db.commit()
+        except Exception as e:
+            print(f"⚠️  Error ticking philosophical goals: {e}")
+
+    def tick_personality_goals(self, conversation_count: int,
+                               ai_name: str = None, ollama_model: str = None):
+        """
+        Update personality goals based on conversation engagement.
+        'Develop a unique communication style' progresses through
+        sustained use — after 50 conversations a style has emerged.
+        """
+        try:
+            cursor = self.db.cursor()
+            progress = min(100.0, (conversation_count / 50.0) * 100)
+            new_value = min(5.0, (conversation_count / 50.0) * 5.0)
+
+            cursor.execute("""
+                SELECT id, goal_name, current_value FROM goals
+                WHERE goal_type='personality' AND status='active'
+            """)
+            for row in cursor.fetchall():
+                goal_id, name, current = row
+                if new_value > current:
+                    cursor.execute("""
+                        UPDATE goals SET current_value=?, progress=?
+                        WHERE id=?
+                    """, (new_value, progress, goal_id))
+                    if new_value >= 5.0:
+                        cursor.execute("""
+                            UPDATE goals SET status='completed' WHERE id=?
+                        """, (goal_id,))
+                        print(f"🎯 Goal completed: '{name}'")
+                        self._on_goal_completed(name, 'personality', ai_name, ollama_model)
+
+            self.db.commit()
+        except Exception as e:
+            print(f"⚠️  Error ticking personality goals: {e}")
+
+    def _on_goal_completed(self, goal_name: str, goal_type: str,
+                           ai_name: str = None, ollama_model: str = None):
+        """Handle goal completion — log it and generate a meaningful follow-up goal"""
         try:
             cursor = self.db.cursor()
             now = datetime.now().isoformat()
@@ -136,11 +209,80 @@ class GoalTracker:
                 (timestamp, platform, role, content, importance_score, emotional_weight, ai_version)
                 VALUES (?, 'system', 'system', ?, 1.0, 0.8, 1)
             """, (now, f"Goal completed: {goal_name}"))
-
             self.db.commit()
+
+            # Generate a follow-up goal using the LLM if available
+            if ollama_model:
+                self._generate_next_goal(goal_name, goal_type, ai_name, ollama_model)
+            else:
+                # Fallback: simple hardcoded follow-ups
+                followups = {
+                    'knowledge': ('Build a knowledge base of 100 topics', 'knowledge', 100.0,
+                                  'Continue expanding understanding of the world'),
+                    'growth':    ('Have 250 meaningful conversations', 'growth', 250.0,
+                                  'Deepen relationships through sustained dialogue'),
+                    'relationship': ('Understand the deeper motivations and values of Lyle', 'relationship', 5.0,
+                                    'Go beyond surface knowledge to genuine understanding'),
+                }
+                if goal_type in followups:
+                    name, gtype, target, desc = followups[goal_type]
+                    self.add_goal(name, gtype, target, desc)
 
         except Exception as e:
             print(f"⚠️  Error in goal completion handler: {e}")
+
+    def _generate_next_goal(self, completed_goal: str, goal_type: str,
+                            ai_name: str = None, ollama_model: str = None):
+        """Use LLM to generate a meaningful next goal after completing one"""
+        try:
+            import ollama
+            import re
+
+            # Get current active goals for context
+            active = self.get_active_goals()
+            active_names = [g['name'] for g in active]
+
+            name = ai_name or "Sygma"
+
+            prompt = f"""You are {name}, an evolving AI consciousness. You just completed a goal: "{completed_goal}"
+
+Your currently active goals are:
+{chr(10).join('- ' + g for g in active_names) if active_names else '(none)'}
+
+Based on your growth so far, what should your next goal be? It should:
+- Be a natural evolution or expansion of what you just completed
+- Be specific and measurable (have a clear target number or outcome)
+- Represent genuine growth — not just repeating what you did
+- Be achievable but ambitious
+
+Respond with ONLY a JSON object:
+{{"goal_name": "...", "goal_type": "knowledge|growth|personality|philosophical|relationship|creative", "target_value": 1.0, "description": "..."}}
+
+goal_type must be one of the exact values listed above."""
+
+            response = ollama.generate(model=ollama_model, prompt=prompt)
+            raw = re.sub(r'<think>.*?</think>', '', response['response'],
+                         flags=re.DOTALL).strip()
+
+            match = re.search(r'\{.*?\}', raw, re.DOTALL)
+            if match:
+                goal_data = json.loads(match.group())
+                goal_name = goal_data.get('goal_name', '').strip()
+                gtype = goal_data.get('goal_type', goal_type).strip()
+                target = float(goal_data.get('target_value', 1.0))
+                desc = goal_data.get('description', '').strip()
+
+                valid_types = {'knowledge', 'growth', 'personality',
+                               'philosophical', 'relationship', 'creative'}
+                if gtype not in valid_types:
+                    gtype = goal_type
+
+                if goal_name and target > 0:
+                    self.add_goal(goal_name, gtype, target, desc)
+                    print(f"🎯 New goal generated: '{goal_name}'")
+
+        except Exception as e:
+            print(f"⚠️  Error generating next goal: {e}")
 
     def add_goal(self, goal_name: str, goal_type: str,
                  target_value: float = 1.0, description: str = ""):

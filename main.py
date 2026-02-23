@@ -387,6 +387,42 @@ def chat():
         if search_query:
             _log_activity('search', 'Web Search', search_query, None)
 
+        # ── Moltbook action detection ──────────────────────────────
+        # Detect MOLTBOOK_POST_NOW trigger — strip markdown before matching
+        import re as _re
+        clean_response = _re.sub(r'\*+', '', response_text)  # remove ** bold markers
+        # Try pipe-separated format first: MOLTBOOK_POST_NOW: title | content
+        moltbook_match = _re.search(
+            r'MOLTBOOK_POST_NOW:\s*(.+?)\s*\|\s*([\s\S]+?)(?:\n\n|\Z)',
+            clean_response
+        )
+        # Fallback: title on same line, content on following lines
+        if not moltbook_match:
+            moltbook_match = _re.search(
+                r'MOLTBOOK_POST_NOW:\s*([^\n]+)\n+([\s\S]+?)(?:\n\n|\Z)',
+                clean_response
+            )
+        if moltbook_match:
+            mb = background_scheduler.moltbook if background_scheduler else None
+            if mb and mb.enabled:
+                mb_title   = moltbook_match.group(1).strip()[:200]
+                mb_content = moltbook_match.group(2).strip()[:1000]
+                mb_result  = mb.create_post(mb_title, mb_content, submolt='general')
+                mb_success = bool(mb_result.get('post') or mb_result.get('success'))
+                actions.append({
+                    'type':    'moltbook_post',
+                    'success': mb_success,
+                    'title':   mb_title,
+                    'message': 'Posted to Moltbook' if mb_success else mb_result.get('error', 'Post failed')
+                })
+                _log_activity('moltbook', 'Post Created' if mb_success else 'Post Failed',
+                              mb_title, mb_content[:200])
+                # Strip the trigger phrase from the visible response
+                response_text = _re.sub(
+                    r'\*{0,2}MOLTBOOK_POST_NOW:\*{0,2}\s*.+?(?:\n\n|\Z)',
+                    '', response_text, flags=_re.DOTALL
+                ).strip()
+
         return jsonify({
             'response':   response_text,
             'confidence': confidence,
@@ -963,6 +999,35 @@ def reset_personality():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/context/reset', methods=['POST'])
+def reset_context():
+    """
+    Clear recent chat history from active context window.
+    Does NOT delete memories, knowledge, journal, or personality.
+    Use when Sygma loses her identity due to a poisoned context.
+    """
+    try:
+        cursor = ai_engine.db.get_connection().cursor()
+        # Mark recent chat_history as low importance so it won't be pulled into context
+        # We don't delete — we just exclude it from the active window
+        cutoff = datetime.now().isoformat()
+        cursor.execute("""
+            UPDATE chat_history
+            SET importance_score = 0.0
+            WHERE timestamp >= datetime('now', '-2 hours')
+            AND role IN ('user', 'assistant')
+        """)
+        ai_engine.db.get_connection().commit()
+        rows_affected = cursor.rowcount
+        print(f"🔄 Context reset: {rows_affected} recent messages deprioritised")
+        return jsonify({
+            'success': True,
+            'messages_cleared': rows_affected,
+            'note': 'Recent context cleared. Memories, knowledge and personality intact. Start a fresh conversation.'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/personality/force-evolve', methods=['POST'])
 def force_evolve():
     """Manually trigger a personality evolution tick for testing"""
@@ -1222,13 +1287,22 @@ def search_and_chat():
     context_text = web_search.format_for_prompt(query, results)
     prompt  = f"Based on these search results, answer: {query}"
     context = {'web_search': context_text}
-    response_text, confidence = ai_engine.chat(prompt, context)
-    return jsonify({
-        'query':      query,
-        'results':    results,
-        'response':   response_text,
-        'confidence': confidence,
-    })
+            # ── Curiosity detection after each exchange ────────────────
+    if background_scheduler and background_scheduler.curiosity_engine:
+        background_scheduler.curiosity_engine.process_exchange(
+            message,
+            response_text,
+            ollama_model=ai_engine.model
+            )
+
+
+    #response_text, confidence = ai_engine.chat(prompt, context)
+    #return jsonify({
+    #    'query':      query,
+    #    'results':    results,
+    #    'response':   response_text,
+    #    'confidence': confidence,
+    #})
 
 
 # ═══════════════════════════════════════════════════════════════════

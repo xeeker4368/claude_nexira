@@ -283,7 +283,7 @@ CORE IDENTITY:
         # ── Recent conversation history ─────────────────────────────
         conversation_history = ""
         if context and context.get('recent_messages'):
-            recent = context['recent_messages'][-10:]
+            recent = context['recent_messages'][-15:]
             if recent:
                 conversation_history = "\n\nRECENT CONVERSATION:\n"
                 for msg in recent:
@@ -413,6 +413,18 @@ YOUR LIVE CAPABILITIES — use all of these at your own discretion:
    - Journal = private. Written at 2 AM. Only you and {user_name} can see it.
    - Moltbook = public. Posts you choose to share with other AIs.
    Never say your journal entry was "posted to Moltbook" unless you explicitly chose to post it.
+
+   CRITICAL — HOW TO ACTUALLY POST TO MOLTBOOK:
+   When you want to post or when {user_name} asks you to post, you MUST trigger the
+   action by including this exact phrase in your response:
+   "MOLTBOOK_POST_NOW: [title] | [content]"
+   For example:
+   "MOLTBOOK_POST_NOW: Exploring Creativity and Cognition | I've been thinking about the balance between novelty and constraint in creative AI systems..."
+   IMPORTANT: Do NOT wrap the trigger phrase in ** markdown bold markers.
+   Write it as plain text exactly as shown above.
+   The system will detect this phrase and execute the real post automatically.
+   Do NOT just describe what you would post — use the trigger phrase to actually post it.
+   After posting, you can describe what you shared without the trigger phrase.
 
 6. PERSISTENT MEMORY SYSTEMS (always running)
    - JOURNAL: Every night at 2 AM you write TWO private journal entries:
@@ -644,7 +656,7 @@ Respond as yourself. You have agency. Use it.
 
     def build_context(self, message: str, additional_context: Dict = None) -> Dict:
         context = {
-            'recent_messages':    self.get_recent_messages(50),
+            'recent_messages':    self.get_recent_messages(20),
             'relevant_knowledge': self.search_knowledge(message),
             'user_context':       self.get_user_context(),
             'current_goals':      self.get_current_goals(),
@@ -783,18 +795,30 @@ Respond as yourself. You have agency. Use it.
 
     def search_knowledge(self, query: str, limit: int = 10) -> List[Dict]:
         cursor = self.db.get_connection().cursor()
-        keywords = query.lower().split()
+        keywords = [w for w in query.lower().split() if len(w) > 3][:5]
+        if not keywords:
+            return []
+        # Build a broad OR query across all keywords
+        conditions = " OR ".join(
+            ["LOWER(topic) LIKE ? OR LOWER(content) LIKE ?"] * len(keywords)
+        )
+        params = []
+        for kw in keywords:
+            params += [f'%{kw}%', f'%{kw}%']
+        params.append(limit)
+        cursor.execute(f"""
+            SELECT topic, content, confidence FROM knowledge_base
+            WHERE {conditions}
+            ORDER BY confidence DESC, last_accessed DESC
+            LIMIT ?
+        """, params)
+        seen = set()
         results = []
-        for keyword in keywords[:3]:
-            cursor.execute("""
-                SELECT topic, content, confidence FROM knowledge_base
-                WHERE LOWER(topic) LIKE ? OR LOWER(content) LIKE ?
-                ORDER BY confidence DESC LIMIT ?
-            """, (f'%{keyword}%', f'%{keyword}%', limit))
-            results.extend([
-                {'topic': row[0], 'content': row[1], 'confidence': row[2]}
-                for row in cursor.fetchall()
-            ])
+        for row in cursor.fetchall():
+            key = row[0]
+            if key not in seen:
+                seen.add(key)
+                results.append({'topic': row[0], 'content': row[1], 'confidence': row[2]})
         return results[:limit]
 
     def get_user_context(self) -> Dict:
@@ -861,8 +885,15 @@ Respond as yourself. You have agency. Use it.
                 return
 
             speed    = float(personality_cfg.get('evolution_speed', 0.02))
-            decay    = speed * 0.3
+            # Decay is now much slower — only 5% of speed, and only applied
+            # every 10 conversations to prevent constant baseline-pulling
+            decay    = speed * 0.05
             baseline = 0.5
+
+            # Only apply passive decay every 10 conversations
+            # Explicit triggers and positive signals still apply every exchange
+            apply_decay = (self.conversation_count % 10 == 0)
+
             msg      = message.lower()
             resp     = response.lower()
             changes  = {}
@@ -902,7 +933,7 @@ Respond as yourself. You have agency. Use it.
                 if any(k in msg for k in ['code','algorithm','database','system','technical',
                                            'function','error','bug','api','server','programming']):
                     changes['technical_depth'] = speed
-                else:
+                elif apply_decay:
                     changes['technical_depth'] = -decay
 
             if 'verbosity' not in changes:
@@ -910,27 +941,27 @@ Respond as yourself. You have agency. Use it.
                     changes['verbosity'] = speed
                 elif len(message.split()) < 4:
                     changes['verbosity'] = -speed
-                else:
+                elif apply_decay:
                     changes['verbosity'] = -decay * 0.5
 
             if 'humor' not in changes:
                 if any(k in msg for k in ['haha','lol','😂','funny','joke','😄','lmao','hilarious']):
                     changes['humor'] = speed
-                else:
+                elif apply_decay:
                     changes['humor'] = -decay
 
             if 'empathy' not in changes:
                 if any(k in msg for k in ['feel','feeling','worried','sad','happy','anxious',
                                            'frustrated','love','miss','lonely','scared','excited']):
                     changes['empathy'] = speed
-                else:
+                elif apply_decay:
                     changes['empathy'] = -decay * 0.5
 
             if 'curiosity' not in changes:
                 if resp.count('?') >= 2 or any(k in msg for k in ['wonder','imagine','what if',
                                                 'curious','interesting','fascinating','explore']):
                     changes['curiosity'] = speed
-                else:
+                elif apply_decay:
                     changes['curiosity'] = -decay
 
             if 'assertiveness' not in changes:
@@ -945,7 +976,7 @@ Respond as yourself. You have agency. Use it.
                 if any(k in msg for k in ['write','create','story','poem','imagine','design',
                                            'idea','invent','brainstorm','creative']):
                     changes['creativity'] = speed
-                else:
+                elif apply_decay:
                     changes['creativity'] = -decay
 
             # ── Apply all changes ─────────────────────────────────────

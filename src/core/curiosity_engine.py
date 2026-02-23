@@ -45,50 +45,83 @@ class CuriosityEngine:
         except Exception:
             self._skip_topics = set()
 
-    def extract_curious_topics(self, message: str, response: str) -> List[str]:
+    def extract_curious_topics(self, message: str, response: str,
+                               ollama_model: str = None) -> List[str]:
         """
-        Analyse a conversation exchange and pull out topics
-        the AI expressed uncertainty or curiosity about.
+        Use the LLM to intelligently identify genuine intellectual topics
+        worth researching — not sentence fragments or conversational phrases.
+        Falls back to regex patterns if ollama is unavailable.
         """
+        # Try LLM-based extraction first
+        if ollama_model:
+            try:
+                import ollama
+                import re
+
+                prompt = f"""Review this conversation exchange and identify any specific intellectual topics, concepts, or subjects that would be worth researching.
+
+User said: {message[:300]}
+AI responded: {response[:300]}
+
+List only REAL, RESEARCHABLE TOPICS — things like:
+- Named concepts (e.g. "reconstructive memory", "confabulation", "quantum entanglement")
+- Fields of study (e.g. "neuroscience of memory", "AI consciousness research")
+- Specific questions about how something works (e.g. "how neural networks learn")
+- Named events, phenomena, or entities worth knowing more about
+
+DO NOT include:
+- Sentence fragments or partial phrases
+- Conversational filler ("way to convey", "been thinking")
+- Vague references ("that thing", "what you said")
+- Topics already fully explained in the conversation
+
+If there are no genuinely researchable topics, return an empty list.
+
+Return ONLY a JSON array of short topic strings (3-8 words each). Example:
+["reconstructive memory neuroscience", "AI consciousness theories", "quantum entanglement basics"]
+
+Return [] if nothing qualifies."""
+
+                response_obj = ollama.generate(model=ollama_model, prompt=prompt)
+                raw = re.sub(r'<think>.*?</think>', '', response_obj['response'],
+                             flags=re.DOTALL).strip()
+
+                # Extract JSON array
+                match = re.search(r'\[.*?\]', raw, re.DOTALL)
+                if match:
+                    topics = json.loads(match.group())
+                    # Filter against known topics and validate quality
+                    valid = []
+                    for t in topics:
+                        t = str(t).strip()
+                        words = t.split()
+                        if (len(words) >= 2 and len(t) >= 10 and
+                                t.lower() not in self._skip_topics):
+                            valid.append(t)
+                    return valid[:3]  # Max 3 high-quality topics per exchange
+            except Exception as e:
+                print(f"  ⚠️  LLM curiosity extraction failed, using fallback: {e}")
+
+        # Fallback: conservative regex patterns only
+        import re
         topics = []
         combined = (message + " " + response).lower()
 
-        # Look for curiosity trigger phrases followed by a topic
-        import re
         patterns = [
-            r"i wonder (?:about |if |why |how )?([a-z][a-z\s]{3,40})",
-            r"what (?:is|are) ([a-z][a-z\s]{3,30})\?",
-            r"how does ([a-z][a-z\s]{3,30}) work",
-            r"(?:not sure|uncertain) about ([a-z][a-z\s]{3,30})",
-            r"i(?:'m| am) curious about ([a-z][a-z\s]{3,30})",
-            r"fascinating (?:topic|idea|concept)[:\s]+([a-z][a-z\s]{3,30})",
+            r"i(?:'m| am) curious about ([a-z][a-z\s]{4,35}?)(?:\.|,|\?|$)",
+            r"i wonder (?:about |why |how )([a-z][a-z\s]{4,35}?)(?:\.|,|\?|$)",
+            r"(?:fascinating|intriguing) (?:concept|idea|topic)[:\s]+([a-z][a-z\s]{4,35}?)(?:\.|,|\?|$)",
         ]
 
         for pattern in patterns:
             for match in re.finditer(pattern, combined):
                 topic = match.group(1).strip().rstrip('.,!?')
-                if len(topic) > 3 and topic.lower() not in self._skip_topics:
+                words = topic.split()
+                if (len(words) >= 2 and len(topic) >= 10 and
+                        topic.lower() not in self._skip_topics):
                     topics.append(topic)
 
-        # Also check if any curiosity trigger appears near a noun phrase
-        words = combined.split()
-        for i, word in enumerate(words):
-            for trigger in self.curiosity_triggers:
-                if trigger in combined:
-                    # Grab the 2-3 words after the trigger as a potential topic
-                    trigger_words = trigger.split()
-                    try:
-                        idx = words.index(trigger_words[0], max(0, i - 2))
-                        candidate = ' '.join(words[idx + len(trigger_words): idx + len(trigger_words) + 3])
-                        candidate = candidate.strip().rstrip('.,!?')
-                        if len(candidate) > 3 and candidate.lower() not in self._skip_topics:
-                            if candidate not in topics:
-                                topics.append(candidate)
-                    except (ValueError, IndexError):
-                        pass
-                    break
-
-        return list(set(topics))[:5]  # Max 5 topics per exchange
+        return list(set(topics))[:3]
 
     def add_to_queue(self, topic: str, reason: str = "", priority: float = 0.5):
         """Add a topic to the curiosity research queue"""
@@ -118,12 +151,13 @@ class CuriosityEngine:
         except Exception as e:
             print(f"⚠️  Error adding to curiosity queue: {e}")
 
-    def process_exchange(self, message: str, response: str):
+    def process_exchange(self, message: str, response: str,
+                         ollama_model: str = None):
         """
         Called after every chat exchange.
         Detects curiosity and adds topics to the queue.
         """
-        topics = self.extract_curious_topics(message, response)
+        topics = self.extract_curious_topics(message, response, ollama_model)
         for topic in topics:
             self.add_to_queue(
                 topic,
