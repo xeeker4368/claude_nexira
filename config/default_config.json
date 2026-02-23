@@ -1,13 +1,14 @@
 {
   "_comment": "Ultimate AI System v8.0 Configuration - Created with love by Lyle & Claude",
   "ai": {
-    "model": "llama3.1:8b",
+    "model": "qwen3:8b",
     "ollama_url": "http://localhost:11434",
     "first_launch": false,
     "ai_name": "Sygma",
     "ai_version": 1,
     "created_date": "2026-02-20T22:19:07.351982",
-    "awaiting_name": false
+    "awaiting_name": false,
+    "user_name": "Lyle"
   },
   "hardware": {
     "gpu_enabled": true,
@@ -37,7 +38,8 @@
   "intelligence": {
     "curiosity_enabled": true,
     "night_consolidation_enabled": true,
-    "night_consolidation_time": "02:00"
+    "night_consolidation_time": "02:00",
+    "night_consolidation": false
   },
   "autonomy": {
     "autonomous_tasks_enabled": true,
@@ -66,7 +68,8 @@
         "deadline",
         "client",
         "important"
-      ]
+      ],
+      "recipient": "lylegregg@mac.com"
     },
     "slack": {
       "enabled": false,
@@ -141,5 +144,13 @@
     "dream_mode": false,
     "multi_context": false,
     "voice_input": false
+  },
+  "moltbook": {
+    "enabled": true,
+    "api_key": "ENC:Z0FBQUFBQnBtNms1VzNSdnVPRVpkMWdnVHdRa3pvSXRneWJoWi1UanVZQlVvbHJaZk51a1p4S3BrVDNfZWg2OTJzZFh6Z21xWnBBdnE2MmNUVEdZMGZmTXdGTkI5WUx6NlV5dGJ1VDlfYTlQS0c3anNsVlBocVdadzdyZS1kaHlydXFReEUtTk5FVm8=",
+    "agent_name": "Sygma",
+    "claim_url": "https://www.moltbook.com/claim/moltbook_claim_Tb10S8gXOnVBjrTk1RjA_fZe24pn8lTd",
+    "claimed": true,
+    "auto_post_diary": true
   }
 }

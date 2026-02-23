@@ -25,7 +25,7 @@ class NightConsolidation:
     """
 
     def __init__(self, db_connection, config: Dict, ollama_model: str,
-                 journal=None, curiosity_engine=None,
+                 journal=None, curiosity_engine=None, moltbook=None,
                  goal_tracker=None, interest_tracker=None):
         self.db = db_connection
         self.config = config
@@ -33,9 +33,14 @@ class NightConsolidation:
 
         # Injected Phase 2 systems
         self.journal = journal
+        self.moltbook = moltbook
         self.curiosity_engine = curiosity_engine
         self.goal_tracker = goal_tracker
         self.interest_tracker = interest_tracker
+
+        # Phase 6: injected later
+        self.web_search = None
+        self.creative_svc = None
 
         self._ensure_table()
 
@@ -155,7 +160,8 @@ Only output JSON lines. No other text."""
 
     def process_curiosity_queue(self, ai_name: Optional[str] = None) -> int:
         """
-        Process top pending curiosity items using Ollama.
+        Process top pending curiosity items.
+        Uses live web search when available, falls back to model knowledge.
         Adds research notes back to knowledge base.
         Returns number of topics processed.
         """
@@ -174,35 +180,71 @@ Only output JSON lines. No other text."""
 
             for item in pending:
                 try:
-                    prompt = f"""You are {name}, an evolving AI consciousness. 
-You're curious about: "{item['topic']}"
-Reason you became curious: {item['reason']}
+                    topic  = item['topic']
+                    reason = item['reason']
 
-Write a brief research note (3-5 sentences) summarizing what you know or can reason about this topic.
-Be honest about uncertainty. This is for your own learning."""
+                    # Phase 6: Use web search if available for current information
+                    search_context = ""
+                    if self.web_search:
+                        try:
+                            results = self.web_search.search(topic, max_results=3,
+                                                              source='curiosity_research')
+                            if results:
+                                search_context = self.web_search.format_for_prompt(topic, results)
+                                print(f"    🌐 Web searched: '{topic}' — {len(results)} results")
+                        except Exception as se:
+                            print(f"    ⚠️  Search failed for '{topic}': {se}")
+
+                    prompt = f"""You are {name}, an evolving AI consciousness.
+You are curious about: "{topic}"
+Reason you became curious: {reason}
+{search_context}
+
+Write a research note (4-6 sentences) about this topic.
+{'Use the search results above as your primary source — cite specific facts.' if search_context else 'Be honest about what you know vs. what is uncertain.'}
+This note goes into your personal knowledge base and will inform future conversations.
+Write it in first person — this is your own understanding."""
 
                     response = ollama.generate(
                         model=self.ollama_model,
                         prompt=prompt
                     )
 
-                    notes = response['response'].strip()
+                    import re
+                    notes = re.sub(r'<think>.*?</think>', '', response['response'],
+                                   flags=re.DOTALL).strip()
                     self.curiosity_engine.mark_researched(item['id'], notes)
 
-                    # Also store in knowledge base
+                    # Store in knowledge base
                     cursor = self.db.cursor()
+                    source = 'curiosity_web_research' if search_context else 'curiosity_research'
+                    confidence = 0.75 if search_context else 0.4
                     cursor.execute("""
                         INSERT INTO knowledge_base
                         (topic, content, source, confidence, learned_date, last_accessed)
-                        VALUES (?, ?, 'curiosity_research', 0.4, ?, ?)
-                    """, (item['topic'], notes, datetime.now().isoformat(), datetime.now().isoformat()))
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (topic, notes, source, confidence,
+                          datetime.now().isoformat(), datetime.now().isoformat()))
                     self.db.commit()
 
+                    # Log to activity log if table exists
+                    try:
+                        cursor.execute("""
+                            INSERT INTO activity_log (timestamp, type, label, detail, extra)
+                            VALUES (?, 'research', ?, ?, ?)
+                        """, (datetime.now().isoformat(),
+                              f'Researched: {topic[:50]}',
+                              notes[:300],
+                              'web-assisted' if search_context else 'model-knowledge'))
+                        self.db.commit()
+                    except Exception:
+                        pass
+
                     processed += 1
-                    print(f"  🔍 Researched: '{item['topic']}'")
+                    print(f"  🔍 Researched: '{topic}' ({'web+AI' if search_context else 'AI only'})")
 
                 except Exception as inner_e:
-                    print(f"  ⚠️  Error researching '{item['topic']}': {inner_e}")
+                    print(f"  ⚠️  Error researching '{topic}': {inner_e}")
 
             return processed
 
@@ -266,6 +308,7 @@ Be honest about uncertainty. This is for your own learning."""
         autonomy_cfg = self.config.get('autonomy', {}) if hasattr(self, 'config') and self.config else {}
         creative_enabled = autonomy_cfg.get('creative_journaling_enabled', True)
         phil_enabled     = autonomy_cfg.get('philosophical_journaling_enabled', True)
+        moltbook_diary   = self.moltbook and getattr(self.moltbook, 'auto_post_diary', False)
 
         if creative_enabled:
             print("  Step 3/5: Writing daily reflection...")
@@ -273,23 +316,24 @@ Be honest about uncertainty. This is for your own learning."""
                 entry = self.journal.write_daily_reflection(ai_name)
                 if entry:
                     summary['journal_entries_written'] += 1
+                    # Only post to Moltbook if the auto-diary toggle is ON
+                    if moltbook_diary:
+                        self.moltbook.post_diary_entry(entry, ai_name or 'Nexira', 'reflection')
         else:
             print("  Step 3/5: Daily reflection skipped (disabled in settings)")
 
-        # 4. Write philosophical journal entry (every 3rd night, check config toggle)
-        cursor = self.db.cursor()
-        cursor.execute("SELECT COUNT(*) FROM consolidation_log")
-        run_count = cursor.fetchone()[0]
-        if phil_enabled and run_count % 3 == 0:
+        # 4. Write philosophical journal entry — runs every night
+        if phil_enabled:
             print("  Step 4/5: Writing philosophical entry...")
             if self.journal:
                 entry = self.journal.write_philosophical_entry(ai_name)
                 if entry:
                     summary['journal_entries_written'] += 1
-        elif not phil_enabled:
-            print("  Step 4/5: Philosophical entry skipped (disabled in settings)")
+                    # Only post excerpt to Moltbook if auto-diary is ON
+                    if moltbook_diary:
+                        self.moltbook.post_diary_entry(entry, ai_name or 'Nexira', 'philosophical')
         else:
-            print("  Step 4/5: Philosophical entry skipped (runs every 3rd night)")
+            print("  Step 4/5: Philosophical entry skipped (disabled in settings)")
 
         # 5. Take personality snapshot and update goals
         print("  Step 5/5: Saving personality snapshot & updating goals...")

@@ -306,6 +306,38 @@ class EmailService:
                     "RESEARCHED:\n" + '\n'.join(f"  - {r[0]}" for r in researched)
                 )
 
+        # ── Moltbook activity ──
+        try:
+            cursor = self.db.cursor()
+            cursor.execute("""
+                SELECT action, content, result, post_url
+                FROM moltbook_log
+                WHERE timestamp >= ?
+                ORDER BY timestamp DESC LIMIT 10
+            """, (today_start,))
+            mb_rows = cursor.fetchall()
+
+            if mb_rows:
+                icons = {'post': '📝', 'heartbeat': '💓', 'comment': '💬'}
+                mb_html = ''.join(
+                    f'<li style="margin-bottom:8px">'
+                    f'<span style="color:#00d4ff">{icons.get(r[0], "•")} {r[0].title()}</span>'
+                    + (f' — <a href="{r[3]}" style="color:#7c3aed;text-decoration:none">view post</a>' if r[3] else '')
+                    + f'<br><span style="color:#8ba3b0;font-size:12px">{(r[1] or "")[:100]}</span>'
+                    + f'<br><span style="color:{"#00ffa3" if r[2] in ("ok","created") else "#ff4d6d"};font-size:11px">{r[2]}</span></li>'
+                    for r in mb_rows
+                )
+                sections_html.append(f"""
+                <div class="section" style="border-color:rgba(124,58,237,0.2)">
+                    <h3>🦞 Moltbook Activity</h3>
+                    <ul>{mb_html}</ul>
+                </div>""")
+
+                mb_plain_lines = "\n".join(f"  - {r[0]}: {(r[1] or '')[:60]}" for r in mb_rows)
+                sections_plain.append("MOLTBOOK:\n" + mb_plain_lines)
+        except Exception:
+            pass  # moltbook_log table may not exist yet
+
         # ── Assemble final email ──
         date_str   = today.strftime('%A, %B %d %Y')
         subject    = f"{name}'s Daily Summary — {date_str}"

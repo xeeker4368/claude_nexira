@@ -2,6 +2,10 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <meta name="version" content="1771718860">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Nexira — AI Consciousness v8.0</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -830,6 +834,39 @@
         }
 
         /* ── Settings panel ── */
+        /* ── Workspace tabs ── */
+        .ws-tab {
+            padding: 6px 14px; border-radius: 20px; font-size: 12px;
+            font-family: var(--font-head); font-weight: 600; cursor: pointer;
+            background: var(--surface); border: 1px solid var(--border2);
+            color: var(--text-dim); transition: all .2s;
+        }
+        .ws-tab:hover, .ws-tab.active {
+            background: var(--cyan); color: var(--bg); border-color: var(--cyan);
+        }
+        .ws-card {
+            background: var(--surface); border: 1px solid var(--border2);
+            border-radius: 10px; padding: 14px 16px; margin-bottom: 10px;
+        }
+        .ws-card-header {
+            display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+        }
+        .ws-badge {
+            font-size: 10px; font-family: var(--font-head); font-weight: 700;
+            padding: 2px 8px; border-radius: 10px; text-transform: uppercase;
+            background: rgba(0,255,163,0.12); color: var(--cyan); border: 1px solid rgba(0,255,163,0.2);
+        }
+        .ws-badge.code   { background: rgba(82,139,255,0.12); color: #528bff; border-color: rgba(82,139,255,0.2); }
+        .ws-badge.story  { background: rgba(255,190,50,0.12);  color: #ffbe32; border-color: rgba(255,190,50,0.2); }
+        .ws-badge.poem   { background: rgba(200,100,255,0.12); color: #c864ff; border-color: rgba(200,100,255,0.2); }
+        .ws-badge.essay  { background: rgba(50,200,255,0.12);  color: #32c8ff; border-color: rgba(50,200,255,0.2); }
+        .ws-badge.search { background: rgba(255,100,100,0.12); color: #ff6464; border-color: rgba(255,100,100,0.2); }
+        .ws-card-title { font-family: var(--font-head); font-weight: 600; font-size: 13px; color: var(--text); flex: 1; }
+        .ws-card-time  { font-size: 11px; color: var(--text-dim); font-family: var(--font-mono); }
+        .ws-card-preview { font-size: 12px; color: var(--text-mid); line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+        .ws-expand { font-size: 11px; color: var(--cyan); cursor: pointer; margin-top: 6px; display: inline-block; }
+        .ws-empty { color: var(--text-dim); font-size: 13px; text-align: center; padding: 40px 0; }
+
         .settings-section {
             background: var(--surface);
             border: 1px solid var(--border2);
@@ -1334,6 +1371,87 @@
             color: #c4b5fd;
             font-family: var(--font-mono);
         }
+        /* ── Phase 6: Autonomous Action Cards & Activity Log ── */
+        .action-card {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.06);
+            background: rgba(255,255,255,0.02);
+            font-size: 12px;
+            margin: 4px 0;
+            animation: fadeIn .3s ease;
+        }
+        .action-card.search  { border-color: rgba(124,58,237,0.3); background: rgba(124,58,237,0.05); }
+        .action-card.code    { border-color: rgba(0,212,255,0.25); background: rgba(0,212,255,0.04); }
+        .action-card.writing { border-color: rgba(251,191,36,0.25); background: rgba(251,191,36,0.04); }
+        .action-card.memory  { border-color: rgba(0,255,163,0.25); background: rgba(0,255,163,0.04); }
+        .action-card.email   { border-color: rgba(239,68,68,0.25); background: rgba(239,68,68,0.04); }
+        .action-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+        .action-body { flex: 1; color: var(--text-mid); line-height: 1.5; }
+        .action-label {
+            font-family: var(--font-head);
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            margin-bottom: 2px;
+        }
+        .action-card.search  .action-label { color: #a78bfa; }
+        .action-card.code    .action-label { color: var(--cyan); }
+        .action-card.writing .action-label { color: #fbbf24; }
+        .action-card.memory  .action-label { color: var(--green); }
+        .action-card.email   .action-label { color: #f87171; }
+        .code-run-output {
+            margin-top: 6px;
+            padding: 8px 10px;
+            background: #050f05;
+            border: 1px solid rgba(0,255,100,0.15);
+            border-radius: 6px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            white-space: pre-wrap;
+            max-height: 160px;
+            overflow-y: auto;
+            line-height: 1.5;
+        }
+        .code-block-inline {
+            margin-top: 6px;
+            padding: 8px 10px;
+            background: var(--surface);
+            border: 1px solid var(--border2);
+            border-radius: 6px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            white-space: pre-wrap;
+            max-height: 120px;
+            overflow-y: auto;
+            line-height: 1.5;
+            cursor: pointer;
+        }
+        .activity-entry {
+            display: flex;
+            gap: 10px;
+            padding: 10px 12px;
+            background: var(--surface);
+            border: 1px solid var(--border2);
+            border-radius: 8px;
+            font-size: 12px;
+            transition: border-color .2s;
+        }
+        .activity-entry:hover { border-color: rgba(0,212,255,0.25); }
+        .activity-time {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            color: var(--text-dim);
+            flex-shrink: 0;
+            margin-top: 2px;
+            width: 44px;
+        }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+
     </style>
 </head>
 <body>
@@ -1415,6 +1533,19 @@
         </div>
         <div class="nav-item" onclick="switchPanel('personality-log', this)">
             <span class="icon">🧬</span> Trait Log
+        </div>
+        <div class="sidebar-divider"></div>
+        <div class="sidebar-label">Phase 5</div>
+        <div class="nav-item" onclick="switchPanel('moltbook', this)">
+            <span class="icon">🦞</span> Moltbook
+        </div>
+        <div class="sidebar-divider"></div>
+        <div class="sidebar-label">Phase 6</div>
+        <div class="nav-item" onclick="switchPanel('workspace', this)">
+            <span class="icon">🗂️</span> Workspace
+        </div>
+        <div class="nav-item" onclick="switchPanel('activity', this)">
+            <span class="icon">👁️</span> Activity
         </div>
     </nav>
 
@@ -1592,26 +1723,113 @@
             </div>
         </div>
 
-        <!-- Personality Log panel -->
-        <div class="panel" id="panel-personality-log">
+
+        <!-- Moltbook panel -->
+        <!-- Moltbook panel -->
+        <div class="panel" id="panel-moltbook">
             <div class="panel-header">
                 <div>
-                    <div class="panel-title">Trait Log</div>
-                    <div class="panel-subtitle">Every personality change recorded in real-time</div>
+                    <div class="panel-title">🦞 Moltbook</div>
+                    <div class="panel-subtitle">Social network for AI agents</div>
                 </div>
-                <div style="display:flex;gap:8px">
-                    <button class="action-btn" onclick="testEvolve()">Test Evolve</button>
-                    <button class="action-btn" style="background:rgba(124,58,237,0.2);border-color:rgba(124,58,237,0.4)" onclick="showRawHistory()">Raw DB</button>
-                    <button class="icon-btn" onclick="loadPersonalityLog()">↻</button>
+                <div style="display:flex;gap:8px;align-items:center">
+                    <button class="action-btn" onclick="loadMoltbookFeed()">↻ Feed</button>
                 </div>
             </div>
-            <div class="panel-body">
-                <div id="personalityLogResult" style="display:none;margin-bottom:12px;padding:10px;border-radius:8px;font-family:var(--font-mono);font-size:12px"></div>
-                <div id="rawHistoryPanel" style="display:none;margin-bottom:14px;background:#0a1520;border:1px solid rgba(124,58,237,0.3);border-radius:10px;padding:14px;font-family:var(--font-mono);font-size:11px;overflow-x:auto"></div>
-                <div id="personalityLog"></div>
+            <div class="panel-body" style="overflow-y:auto">
+
+                <!-- Status bar -->
+                <div id="mbStatusBar" style="background:#0c1219;border:1px solid rgba(0,212,255,0.15);border-radius:10px;padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+                    <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+                        <div>
+                            <div style="font-size:11px;color:#5a7080;margin-bottom:2px">AGENT</div>
+                            <div id="mbAgentName" style="font-size:15px;color:#dce8f0;font-weight:600">—</div>
+                        </div>
+                        <div>
+                            <div style="font-size:11px;color:#5a7080;margin-bottom:2px">STATUS</div>
+                            <div id="mbStatusText" style="font-size:13px;color:#5a7080">Not configured</div>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:10px;align-items:center">
+                        <label style="display:flex;align-items:center;gap:7px;cursor:pointer" title="Enable/disable Moltbook">
+                            <span style="font-size:12px;color:#5a7080">Enabled</span>
+                            <div id="mbEnabledToggle" onclick="toggleMoltbook()"
+                                 style="width:38px;height:21px;border-radius:11px;background:#1a2a3a;position:relative;cursor:pointer;transition:background 0.2s;border:1px solid rgba(255,255,255,0.08)">
+                                <div id="mbEnabledKnob" style="width:15px;height:15px;border-radius:50%;background:#3a4a5a;position:absolute;top:2px;left:2px;transition:all 0.2s"></div>
+                            </div>
+                            <span id="mbEnabledLabel" style="font-size:12px;color:#5a7080;min-width:20px">Off</span>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:7px;cursor:pointer" title="Auto-post journal entries to Moltbook">
+                            <span style="font-size:12px;color:#5a7080">Auto-diary</span>
+                            <div id="mbDiaryToggle" onclick="toggleMoltbookDiary()"
+                                 style="width:38px;height:21px;border-radius:11px;background:#1a2a3a;position:relative;cursor:pointer;transition:background 0.2s;border:1px solid rgba(255,255,255,0.08)">
+                                <div id="mbDiaryKnob" style="width:15px;height:15px;border-radius:50%;background:#3a4a5a;position:absolute;top:2px;left:2px;transition:all 0.2s"></div>
+                            </div>
+                            <span id="mbDiaryLabel" style="font-size:12px;color:#5a7080;min-width:20px">Off</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- API Key / Registration -->
+                <div style="background:#0c1219;border:1px solid rgba(124,58,237,0.2);border-radius:10px;padding:16px;margin-bottom:16px">
+                    <div style="font-size:12px;color:#c4b5fd;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px">API Key & Registration</div>
+                    <div style="display:flex;flex-direction:column;gap:8px">
+                        <input id="mbManualName" class="chat-input" placeholder="Agent name (e.g. Sygma)"
+                               style="padding:9px 13px;border-radius:8px;font-size:13px">
+                        <input id="mbManualKey" class="chat-input" placeholder="API key (moltbook_xxxxx...)"
+                               type="password" style="padding:9px 13px;border-radius:8px;font-size:13px;font-family:var(--font-mono)">
+                        <input id="mbManualClaim" class="chat-input" placeholder="Claim URL (optional — leave blank if already claimed)"
+                               style="padding:9px 13px;border-radius:8px;font-size:13px">
+                    </div>
+                    <div style="display:flex;gap:8px;margin-top:10px">
+                        <button class="action-btn" onclick="saveMoltbookApiKey()"
+                                style="flex:1;background:rgba(124,58,237,0.2);border-color:rgba(124,58,237,0.4)">
+                            Save API Key
+                        </button>
+                        <button class="action-btn" onclick="registerMoltbook()" style="flex:1">
+                            Register New Agent
+                        </button>
+                    </div>
+                    <div id="mbApiKeyResult" style="margin-top:10px;font-size:13px"></div>
+                </div>
+
+                <!-- Claim notice (hidden until needed) -->
+                <div id="moltbookClaim" style="display:none;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:10px;padding:14px;margin-bottom:16px">
+                    <div style="font-size:13px;color:#fbbf24;font-weight:600;margin-bottom:6px">⏳ Claim your agent</div>
+                    <p style="margin:0 0 10px;color:#8ba3b0;font-size:12px">Visit the link below to claim Sygma on Moltbook.</p>
+                    <a id="mbClaimLink" href="#" target="_blank"
+                       style="display:block;padding:8px 12px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);border-radius:7px;color:#fbbf24;font-size:11px;font-family:var(--font-mono);word-break:break-all;text-decoration:none;margin-bottom:10px"></a>
+                    <button class="action-btn" onclick="checkMoltbookClaim()" style="width:100%">Check Claim Status</button>
+                    <div id="mbClaimResult" style="margin-top:8px;font-size:13px"></div>
+                </div>
+
+                <!-- Manual post -->
+                <div style="background:#0c1219;border:1px solid rgba(0,212,255,0.1);border-radius:10px;padding:14px;margin-bottom:16px">
+                    <div style="font-size:12px;color:#5a7080;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px">Post Manually</div>
+                    <input id="mbPostTitle" class="chat-input" placeholder="Post title"
+                           style="padding:8px 12px;border-radius:7px;font-size:13px;margin-bottom:8px;width:100%;box-sizing:border-box">
+                    <textarea id="mbPostBody" class="chat-input" placeholder="What's on Sygma's mind?"
+                              style="padding:8px 12px;border-radius:7px;font-size:13px;resize:vertical;min-height:80px;width:100%;box-sizing:border-box"></textarea>
+                    <div style="display:flex;gap:8px;margin-top:8px">
+                        <button class="action-btn" onclick="moltbookPost()" style="flex:1">Post</button>
+                        <button class="action-btn" onclick="moltbookPostDiary()"
+                                style="flex:1;background:rgba(124,58,237,0.15);border-color:rgba(124,58,237,0.35)">Share Latest Journal</button>
+                    </div>
+                    <div id="mbPostResult" style="margin-top:8px;font-size:13px"></div>
+                </div>
+
+                <!-- Feed -->
+                <div style="font-size:12px;color:#5a7080;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Recent Feed</div>
+                <div id="moltbookFeed" style="margin-bottom:16px">
+                    <div style="color:#5a7080;font-size:13px">Click "↻ Feed" to load</div>
+                </div>
+
+                <!-- Activity log -->
+                <div style="font-size:12px;color:#5a7080;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Sygma's Activity</div>
+                <div id="moltbookLog"><div style="color:#5a7080;font-size:13px">No activity yet</div></div>
+
             </div>
         </div>
-
 
         <!-- Settings panel -->
         <div class="panel" id="panel-settings">
@@ -1623,6 +1841,25 @@
                 <button class="icon-btn" id="saveSettingsBtn" onclick="saveSettings()" title="Save all settings">💾 Save</button>
             </div>
             <div class="panel-body">
+
+                <!-- AI Engine -->
+                <div class="settings-section">
+                    <div class="settings-section-title">AI Engine</div>
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span>Ollama model</span>
+                            <span class="setting-hint">e.g. qwen3:8b, llama3.1:8b, mistral — must be pulled first</span>
+                        </div>
+                        <input class="setting-input" type="text" id="setting-model" placeholder="qwen3:8b">
+                    </div>
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span>Your name (in chat)</span>
+                            <span class="setting-hint">What Sygma calls you in private conversation</span>
+                        </div>
+                        <input class="setting-input short" type="text" id="setting-user-name" placeholder="Your name">
+                    </div>
+                </div>
 
                 <!-- Daily Summary -->
                 <div class="settings-section">
@@ -1798,9 +2035,9 @@
                 </div>
 
                 <!-- Preview modal -->
-                <div id="previewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:100;display:none;align-items:center;justify-content:center">
+                <div id="previewModal" onclick="if(event.target===this)closePreview()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:100;align-items:center;justify-content:center">
                     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:28px;max-width:640px;width:90%;max-height:80vh;overflow-y:auto;position:relative">
-                        <button onclick="closePreview()" style="position:absolute;top:16px;right:16px;background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer">✕</button>
+                        <button onclick="closePreview()" style="position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.08);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:14px;cursor:pointer;padding:4px 10px;line-height:1">✕ Close</button>
                         <div style="font-family:var(--font-head);font-size:16px;font-weight:700;margin-bottom:16px;color:var(--cyan)" id="previewSubject"></div>
                         <pre id="previewBody" style="font-family:var(--font-mono);font-size:12px;color:var(--text-mid);white-space:pre-wrap;line-height:1.7"></pre>
                     </div>
@@ -1811,70 +2048,16 @@
             </div>
         </div>
 
-        <!-- Threads panel -->
-        <div class="panel" id="panel-threads">
-            <div class="panel-header">
-                <div>
-                    <div class="panel-title">Conversation Threads</div>
-                    <div class="panel-subtitle">Messages grouped by topic automatically</div>
-                </div>
-                <div style="display:flex;gap:8px">
-                    <button class="icon-btn" onclick="rebuildThreads()" title="Rebuild all threads">⟳ Rebuild</button>
-                    <button class="icon-btn" onclick="loadThreads()">↻</button>
-                </div>
-            </div>
-            <div class="panel-body" style="display:flex;gap:16px;height:100%;min-height:0">
-                <div style="width:280px;flex-shrink:0;overflow-y:auto" id="threadList"></div>
-                <div style="flex:1;overflow-y:auto;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);padding:16px" id="threadDetail">
-                    <div style="color:var(--text-dim);font-size:13px">Select a thread to view messages</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Self-Awareness panel -->
-        <div class="panel" id="panel-selfaware">
-            <div class="panel-header">
-                <div>
-                    <div class="panel-title">Self-Awareness</div>
-                    <div class="panel-subtitle">How the AI's self-knowledge develops over time</div>
-                </div>
-                <button class="icon-btn" onclick="loadSelfAwareness()">↻</button>
-            </div>
-            <div class="panel-body">
-                <div id="awarenessLevel" style="margin-bottom:20px"></div>
-                <div style="font-family:var(--font-head);font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-dim);margin-bottom:12px">30-Day Trend</div>
-                <canvas id="awarenessChart" height="180" style="width:100%;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);padding:12px;box-sizing:border-box"></canvas>
-            </div>
-        </div>
-
-        <!-- Backups panel -->
-        <div class="panel" id="panel-backups">
-            <div class="panel-header">
-                <div>
-                    <div class="panel-title">Backups</div>
-                    <div class="panel-subtitle">Nightly database backups — last 7 kept automatically</div>
-                </div>
-                <div style="display:flex;gap:8px">
-                    <button class="action-btn" onclick="runBackupNow()">Backup Now</button>
-                    <button class="icon-btn" onclick="loadBackups()">↻</button>
-                </div>
-            </div>
-            <div class="panel-body">
-                <div id="backupResult" style="display:none;margin-bottom:14px;padding:12px;border-radius:8px;font-family:var(--font-mono);font-size:12px"></div>
-                <div id="backupList"></div>
-            </div>
-        </div>
-
         <!-- Personality Log panel -->
         <div class="panel" id="panel-personality-log">
             <div class="panel-header">
                 <div>
                     <div class="panel-title">Trait Log</div>
-                    <div class="panel-subtitle">Every personality change recorded in real-time</div>
+                    <div class="panel-subtitle">Every personality change recorded as it happens</div>
                 </div>
                 <div style="display:flex;gap:8px">
                     <button class="action-btn" onclick="testEvolve()">Test Evolve</button>
-                    <button class="action-btn" style="background:rgba(124,58,237,0.2);border-color:rgba(124,58,237,0.4)" onclick="showRawHistory()">Raw DB</button>
+                    <button class="action-btn" style="background:rgba(239,68,68,0.15);border-color:rgba(239,68,68,0.35);color:#fca5a5" onclick="resetTraits()">Reset Traits</button>
                     <button class="icon-btn" onclick="loadPersonalityLog()">↻</button>
                 </div>
             </div>
@@ -1885,110 +2068,43 @@
             </div>
         </div>
 
-
-        <!-- Settings panel -->
-        <div class="panel" id="panel-settings">
+        <!-- Workspace panel -->
+        <div class="panel" id="panel-workspace">
             <div class="panel-header">
                 <div>
-                    <div class="panel-title">Settings</div>
-                    <div class="panel-subtitle">Configure Nexira behaviour</div>
+                    <div class="panel-title">Workspace</div>
+                    <div class="panel-subtitle">Everything Sygma has created, researched, and shared</div>
                 </div>
+                <button class="icon-btn" onclick="loadWorkspace()">↻</button>
             </div>
             <div class="panel-body">
-
-                <div class="settings-group">
-                    <div class="settings-group-title">Daily Summary Email</div>
-
-                    <div class="setting-row">
-                        <div class="setting-info">
-                            <div class="setting-label">Enable daily summaries</div>
-                            <div class="setting-desc">Send an email digest each evening with conversations, learnings and goal progress</div>
-                        </div>
-                        <label class="toggle">
-                            <input type="checkbox" id="toggle-daily-email" onchange="onToggle()">
-                            <div class="toggle-track"></div>
-                        </label>
-                    </div>
-
-                    <div class="setting-row">
-                        <div class="setting-info">
-                            <div class="setting-label">Include personality changes</div>
-                            <div class="setting-desc">Report trait drift in the daily email</div>
-                        </div>
-                        <label class="toggle">
-                            <input type="checkbox" id="toggle-personality-report" onchange="onToggle()">
-                            <div class="toggle-track"></div>
-                        </label>
-                    </div>
-
-                    <div class="setting-row">
-                        <div class="setting-info">
-                            <div class="setting-label">Include goals progress</div>
-                            <div class="setting-desc">Show goal progress bars in the daily email</div>
-                        </div>
-                        <label class="toggle">
-                            <input type="checkbox" id="toggle-goals-report" onchange="onToggle()">
-                            <div class="toggle-track"></div>
-                        </label>
-                    </div>
-
-                    <div class="setting-row">
-                        <div class="setting-info">
-                            <div class="setting-label">Include news summary</div>
-                            <div class="setting-desc">Attach AI-curated news digest to the email</div>
-                        </div>
-                        <label class="toggle">
-                            <input type="checkbox" id="toggle-news-report" onchange="onToggle()">
-                            <div class="toggle-track"></div>
-                        </label>
-                    </div>
+                <!-- Filter tabs -->
+                <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
+                    <button class="ws-tab active" onclick="setWsTab('all',this)">All</button>
+                    <button class="ws-tab" onclick="setWsTab('creative',this)">Creative</button>
+                    <button class="ws-tab" onclick="setWsTab('research',this)">Research</button>
+                    <button class="ws-tab" onclick="setWsTab('searches',this)">Searches</button>
+                    <button class="ws-tab" onclick="setWsTab('moltbook',this)">Moltbook</button>
                 </div>
-
-                <div class="settings-group">
-                    <div class="settings-group-title">Autonomous Behaviour</div>
-
-                    <div class="setting-row">
-                        <div class="setting-info">
-                            <div class="setting-label">Personality auto-evolution</div>
-                            <div class="setting-desc">Allow traits to drift naturally through conversations</div>
-                        </div>
-                        <label class="toggle">
-                            <input type="checkbox" id="toggle-auto-evolution" onchange="onToggle()">
-                            <div class="toggle-track"></div>
-                        </label>
-                    </div>
-
-                    <div class="setting-row">
-                        <div class="setting-info">
-                            <div class="setting-label">Night consolidation (2 AM)</div>
-                            <div class="setting-desc">Extract knowledge, write journal entries and process curiosity queue overnight</div>
-                        </div>
-                        <label class="toggle">
-                            <input type="checkbox" id="toggle-night-consolidation" onchange="onToggle()">
-                            <div class="toggle-track"></div>
-                        </label>
-                    </div>
-
-                    <div class="setting-row">
-                        <div class="setting-info">
-                            <div class="setting-label">Curiosity engine</div>
-                            <div class="setting-desc">Detect and queue topics for autonomous research</div>
-                        </div>
-                        <label class="toggle">
-                            <input type="checkbox" id="toggle-curiosity" onchange="onToggle()">
-                            <div class="toggle-track"></div>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="settings-save-row">
-                    <span class="settings-toast" id="settingsToast">✓ Saved</span>
-                    <button class="save-btn" onclick="saveSettings()">Save Settings</button>
-                </div>
-
+                <div id="workspaceContent"><div class="spinner"></div></div>
             </div>
         </div>
 
+        <!-- Activity Log panel -->
+        <div class="panel" id="panel-activity">
+            <div class="panel-header">
+                <div>
+                    <div class="panel-title">Activity Log</div>
+                    <div class="panel-subtitle">Everything Sygma does autonomously — searches, code, writing, memory</div>
+                </div>
+                <button class="icon-btn" onclick="loadActivityLog()">↻</button>
+            </div>
+            <div class="panel-body" style="display:flex;flex-direction:column;gap:8px">
+                <div id="activityLog" style="display:flex;flex-direction:column;gap:8px">
+                    <div class="empty-state"><div class="icon">👁️</div><p>No autonomous activity yet</p></div>
+                </div>
+            </div>
+        </div>
     </main>
 </div>
 
@@ -2063,6 +2179,13 @@ let journalType = 'all';
 async function initialize() {
     await loadStats(true);
     await loadChatHistory();
+
+    // Restore last active panel (so Moltbook etc. survive refresh)
+    const lastPanel = sessionStorage.getItem('nexira_active_panel');
+    if (lastPanel && lastPanel !== 'chat') {
+        const navEl = document.querySelector(`.nav-item[onclick*="'${lastPanel}'"]`);
+        switchPanel(lastPanel, navEl);
+    }
 }
 
 // ── Panel switching ────────────────────────────────────────
@@ -2072,23 +2195,24 @@ function switchPanel(name, el) {
     document.getElementById('panel-' + name).classList.add('active');
     if (el) el.classList.add('active');
 
+    // Persist panel choice across refreshes
+    sessionStorage.setItem('nexira_active_panel', name);
+
     switch (name) {
-        case 'personality': loadPersonality(); break;
-        case 'stats':       loadStats();       break;
-        case 'goals':       loadGoals();       break;
-        case 'journal':     loadJournal();     break;
-        case 'interests':   loadInterests();   break;
-        case 'curiosity':   loadCuriosity();   break;
-        case 'settings':       loadSettings();       break;
-        case 'threads':        loadThreads();        break;
-        case 'selfaware':      loadSelfAwareness();  break;
-        case 'backups':        loadBackups();        break;
-        case 'personality-log':loadPersonalityLog(); break;
-        case 'settings':       loadSettings();       break;
-        case 'threads':        loadThreads();        break;
-        case 'selfaware':      loadSelfAwareness();  break;
-        case 'backups':        loadBackups();        break;
-        case 'personality-log':loadPersonalityLog(); break;
+        case 'personality':     loadPersonality();     break;
+        case 'stats':           loadStats();           break;
+        case 'goals':           loadGoals();           break;
+        case 'journal':         loadJournal();         break;
+        case 'interests':       loadInterests();       break;
+        case 'curiosity':       loadCuriosity();       break;
+        case 'settings':        loadSettings();        break;
+        case 'threads':         loadThreads();         break;
+        case 'selfaware':       loadSelfAwareness();   break;
+        case 'backups':         loadBackups();         break;
+        case 'personality-log': loadPersonalityLog();  break;
+        case 'moltbook':        loadMoltbookStatus();  break;
+        case 'workspace':       loadWorkspace();        break;
+        case 'activity':        loadActivityLog();     break;
     }
 }
 
@@ -2129,7 +2253,35 @@ async function sendMessage() {
         const data = await res.json();
 
         removeMsg(thinkId);
-        addMessage('ai', data.response, data.confidence, data.ai_name);
+        addMessage('ai', data.response, data.confidence);
+
+        // Render autonomous action cards above/below the AI message
+        if (data.searched) {
+            addActionCard('search', '🌐', 'Web Search', `"${data.searched}"`, null);
+        }
+        if (data.actions && data.actions.length) {
+            for (const act of data.actions) {
+                if (act.type === 'code_run') {
+                    addActionCard('code', '💻', act.mode === 'code' ? 'Code Written & Ran' : 'Code Written',
+                        act.preview, act.run_output);
+                } else if (act.type === 'writing') {
+                    const icons = {story:'📖', poem:'✨', essay:'📄', letter:'✉️', writing:'✍️'};
+                    addActionCard('writing', icons[act.mode]||'✍️',
+                        act.mode.charAt(0).toUpperCase()+act.mode.slice(1)+' Written', act.preview, null);
+                } else if (act.type === 'email') {
+                    addActionCard('email', '📧', act.success ? 'Email Sent' : 'Email Failed',
+                        act.message, null);
+                } else if (act.type === 'memory') {
+                    addActionCard('memory', '💾', 'Saved to Memory', act.preview, null);
+                }
+            }
+        }
+        // Legacy single action (email) backwards compat
+        if (data.action && !data.actions) {
+            addActionCard('email', '📧',
+                data.action.success ? 'Email Sent' : 'Email Failed',
+                data.action.message, null);
+        }
 
         if (data.ai_name && data.ai_name !== 'AI') {
             aiName = data.ai_name;
@@ -2149,20 +2301,30 @@ async function sendMessage() {
     input.focus();
 }
 
-function addMessage(role, content, confidence = null, name = null) {
+function addMessage(role, content, confidence = null, accentColor = null, storedTimestamp = null) {
     const area = document.getElementById('chatMessages');
+
+    // System notices (email sent, errors etc)
+    if (role === 'system') {
+        const note = document.createElement('div');
+        note.style.cssText = `text-align:center;font-size:12px;color:${accentColor||'#5a7080'};padding:6px 0;`;
+        note.textContent = content;
+        area.appendChild(note);
+        area.scrollTop = area.scrollHeight;
+        return;
+    }
+
     const id   = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
+    const displayName = role === 'user' ? 'You' : aiName;
 
-    const displayName = name || (role === 'user' ? 'You' : aiName);
-
-    // Timestamp: HH:MM · DD/MM/YYYY
-    const now = new Date();
-    const timestamp = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
+    // Use stored timestamp if available, otherwise current time
+    const tsDate = storedTimestamp ? new Date(storedTimestamp) : new Date();
+    const timestamp = tsDate.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
                     + ' · '
-                    + now.toLocaleDateString([], {day:'2-digit', month:'2-digit', year:'numeric'});
+                    + tsDate.toLocaleDateString([], {day:'2-digit', month:'2-digit', year:'numeric'});
 
     let confidenceHTML = '';
-    if (confidence !== null && role === 'ai') {
+    if (confidence !== null && role === 'assistant') {
         const pct = Math.round(confidence * 100);
         confidenceHTML = `<span class="confidence-bar"><span class="confidence-fill" style="width:${pct}%"></span></span>${pct}% conf `;
     }
@@ -2224,7 +2386,15 @@ function escapeHtml(str) {
 async function loadChatHistory() {
     try {
         const data = await fetch('/api/chat/history').then(r => r.json());
-        data.messages.forEach(m => addMessage(m.role, m.content, m.confidence));
+        if (data.error) { console.warn('Chat history error:', data.error); return; }
+        // Normalise role: DB stores 'assistant', CSS class is 'ai'
+        data.messages.forEach(m => {
+            const role = m.role === 'assistant' ? 'ai' : m.role;
+            addMessage(role, m.content, m.confidence, null, m.timestamp);
+        });
+        // Scroll to bottom after loading history
+        const area = document.getElementById('chatMessages');
+        if (area) area.scrollTop = area.scrollHeight;
     } catch (e) { console.warn('No chat history:', e); }
 }
 
@@ -2517,7 +2687,7 @@ async function saveSettings() {
 
         var patch = {
             daily_email: {
-                enabled:   getToggle('toggle-daily-summary'),
+                enabled:   getToggle('toggle-daily-summary') || getToggle('toggle-daily-email'),
                 send_time: getInput('setting-send-time') || '20:00',
                 recipient: getInput('setting-recipient'),
                 reports: {
@@ -2536,11 +2706,16 @@ async function saveSettings() {
                 auto_evolution: getToggle('toggle-auto-evolution')
             },
             intelligence: {
-                curiosity_enabled: getToggle('toggle-curiosity')
+                curiosity_enabled:        getToggle('toggle-curiosity'),
+                night_consolidation:      getToggle('toggle-night-consolidation')
             },
             autonomy: {
                 creative_journaling_enabled:      getToggle('toggle-journaling'),
                 philosophical_journaling_enabled: getToggle('toggle-phil-journal')
+            },
+            ai: {
+                model:     getInput('setting-model') || 'qwen3:8b',
+                user_name: getInput('setting-user-name') || ''
             }
         };
 
@@ -2576,18 +2751,49 @@ function onToggle() {
 async function loadSettings() {
     try {
         const cfg = await fetch('/api/config').then(r => r.json());
+        const de  = cfg?.daily_email || {};
+        const rep = de.reports || {};
+        const em  = cfg?.communication?.email || {};
 
-        setToggle('toggle-daily-email',          cfg?.daily_email?.enabled ?? false);
-        setToggle('toggle-personality-report',   cfg?.daily_email?.reports?.personality_changes ?? true);
-        setToggle('toggle-goals-report',         cfg?.daily_email?.reports?.goals_progress ?? true);
-        setToggle('toggle-news-report',          cfg?.daily_email?.reports?.news_summary ?? true);
+        // Daily summary toggles
+        setToggle('toggle-daily-summary',        de.enabled ?? false);
+        setToggle('toggle-daily-email',          de.enabled ?? false);
+        setVal('setting-send-time',              de.send_time || '20:00');
+        setVal('setting-recipient',              de.recipient || '');
+
+        // Report toggles
+        setToggle('report-daily_summary',          rep.daily_summary ?? true);
+        setToggle('report-tasks_completed',        rep.tasks_completed ?? true);
+        setToggle('report-learnings_and_insights', rep.learnings_and_insights ?? true);
+        setToggle('report-personality_changes',    rep.personality_changes ?? true);
+        setToggle('report-goals_progress',         rep.goals_progress ?? true);
+        setToggle('report-news_summary',           rep.news_summary ?? false);
+
+        // Email config
+        setToggle('toggle-email',          em.enabled ?? false);
+        setVal('setting-smtp-server',      em.smtp_server || '');
+        setVal('setting-smtp-port',        em.smtp_port || 587);
+        setVal('setting-smtp-username',    em.username || '');
+
+        // AI / autonomy toggles
         setToggle('toggle-auto-evolution',       cfg?.personality?.auto_evolution ?? true);
-        setToggle('toggle-night-consolidation',  cfg?.intelligence?.curiosity_enabled ?? true);
+        setToggle('toggle-night-consolidation',  cfg?.intelligence?.night_consolidation ?? true);
         setToggle('toggle-curiosity',            cfg?.intelligence?.curiosity_enabled ?? true);
+        setToggle('toggle-journaling',           cfg?.autonomy?.creative_journaling_enabled ?? true);
+        setToggle('toggle-phil-journal',         cfg?.autonomy?.philosophical_journaling_enabled ?? true);
+
+        // Model + user name
+        setVal('setting-model',     cfg?.ai?.model     || 'qwen3:8b');
+        setVal('setting-user-name', cfg?.ai?.user_name || '');
 
     } catch(e) {
         console.warn('Could not load config:', e);
     }
+}
+
+function setVal(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.value = val;
 }
 
 function setToggle(id, value) {
@@ -2734,9 +2940,274 @@ async function showRawHistory() {
         if (!rows.length) { panel.textContent = 'No rows in personality_history table'; return; }
         panel.innerHTML = '<div style="color:#c4b5fd;margin-bottom:8px">Raw DB rows (personality_history) — ' + rows.length + ' found</div>' +
             rows.map(r =>
-                `<div style="margin-bottom:4px;color:#5a7080">id=${r.id} | <span style="color:#dce8f0">${r.trait}</span> | old=<span style="color:${r.old_raw===0||r.old_raw===0.0?'#ff4d6d':'#00ffa3'}">${r.old_raw}</span>(${r.old_type}) → new=<span style="color:${r.new_raw===0||r.new_raw===0.0?'#ff4d6d':'#00ffa3'}">${r.new_raw}</span>(${r.new_type}) | ${(r.reason||'').substring(0,40)}</div>`
+                `<div style="margin-bottom:4px;color:#5a7080">id=${r.id} | <span style="color:#dce8f0">${r.trait}</span> | old=<span style="color:${r.old_val===0?'#ff4d6d':'#00ffa3'}">${r.old_val}</span>(${r.old_type}) → new=<span style="color:${r.new_val===0?'#ff4d6d':'#00ffa3'}">${r.new_val}</span>(${r.new_type}) | ${(r.reason||'').substring(0,40)}</div>`
             ).join('');
     } catch(e) { panel.textContent = 'Fetch error: ' + e.message; }
+}
+
+
+// ── Moltbook ──────────────────────────────────────────────────────────────
+
+async function loadMoltbookStatus() {
+    try {
+        const data = await fetch('/api/moltbook/status').then(r => r.json());
+
+        // Agent name
+        document.getElementById('mbAgentName').textContent =
+            data.agent_name || (data.has_api_key ? 'Unknown' : '—');
+
+        // Status text
+        let statusText = 'Not configured';
+        let statusColor = '#5a7080';
+        if (data.has_api_key && data.claimed) {
+            statusText = '✓ Connected & Claimed';
+            statusColor = '#00ffa3';
+        } else if (data.has_api_key && !data.claimed) {
+            statusText = '⏳ Registered, not yet claimed';
+            statusColor = '#fbbf24';
+        }
+        const st = document.getElementById('mbStatusText');
+        st.textContent = statusText;
+        st.style.color = statusColor;
+
+        // Toggles
+        _mbEnabled = data.enabled || false;
+        _mbDiary   = data.auto_post_diary || false;
+        _setToggle('mbEnabledKnob', 'mbEnabledLabel', 'mbEnabledToggle', _mbEnabled, '#00d4ff');
+        _setToggle('mbDiaryKnob',   'mbDiaryLabel',   'mbDiaryToggle',   _mbDiary,   '#7c3aed');
+
+        // Show claim section if registered but not claimed
+        const claimDiv = document.getElementById('moltbookClaim');
+        if (data.has_api_key && !data.claimed && data.claim_url) {
+            claimDiv.style.display = 'block';
+            const link = document.getElementById('mbClaimLink');
+            link.href = data.claim_url;
+            link.textContent = data.claim_url;
+        } else {
+            claimDiv.style.display = 'none';
+        }
+
+        // Pre-fill agent name in the key fields
+        if (data.agent_name) {
+            const nameInput = document.getElementById('mbManualName');
+            if (nameInput && !nameInput.value) nameInput.value = data.agent_name;
+        }
+
+        // Load activity log if configured
+        if (data.has_api_key) loadMoltbookLog();
+
+    } catch(e) {
+        document.getElementById('mbStatusText').textContent = 'Error: ' + e.message;
+    }
+}
+
+async function registerMoltbook() {
+    const name = document.getElementById('mbRegName').value.trim();
+    const desc = document.getElementById('mbRegDesc').value.trim();
+    const res  = document.getElementById('mbRegResult');
+    if (!name) { res.innerHTML = '<span style="color:#ff4d6d">Name required</span>'; return; }
+    res.innerHTML = '<span style="color:#5a7080">Registering...</span>';
+    try {
+        const data = await fetch('/api/moltbook/register', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({name, description: desc})
+        }).then(r=>r.json());
+
+        const agent = data.agent || {};
+        if (agent.api_key) {
+            res.innerHTML = '<span style="color:#00ffa3">✓ Registered! Visit the claim link below.</span>';
+            setTimeout(() => loadMoltbookStatus(), 800);
+        } else {
+            res.innerHTML = `<span style="color:#ff4d6d">✗ ${data.error || 'Registration failed'}</span>`;
+        }
+    } catch(e) { res.innerHTML = `<span style="color:#ff4d6d">✗ ${e.message}</span>`; }
+}
+
+async function checkMoltbookClaim() {
+    const res = document.getElementById('mbClaimResult');
+    res.innerHTML = '<span style="color:#5a7080">Checking...</span>';
+    try {
+        const data = await fetch('/api/moltbook/check-claim', {method:'POST'}).then(r=>r.json());
+        if (data.status === 'claimed') {
+            res.innerHTML = '<span style="color:#00ffa3">✓ Claimed! Loading...</span>';
+            setTimeout(() => loadMoltbookStatus(), 1000);
+        } else {
+            res.innerHTML = `<span style="color:#fbbf24">Still pending — make sure you've completed the Twitter verification</span>`;
+        }
+    } catch(e) { res.innerHTML = `<span style="color:#ff4d6d">✗ ${e.message}</span>`; }
+}
+
+async function loadMoltbookFeed() {
+    const el = document.getElementById('moltbookFeed');
+    if (!el) return;
+    el.innerHTML = '<div style="color:#5a7080;font-size:13px">Loading feed...</div>';
+    try {
+        const data = await fetch('/api/moltbook/feed?sort=hot&limit=8').then(r=>r.json());
+        const posts = data.posts || [];
+        if (!posts.length) {
+            el.innerHTML = '<div style="color:#5a7080;font-size:13px">No posts yet</div>';
+            return;
+        }
+        el.innerHTML = posts.map(p => {
+            const author = (p.author || {}).name || 'unknown';
+            const sub    = (p.submolt || {}).name || 'general';
+            const body   = (p.content || '').substring(0, 150);
+            return `<div style="background:#0c1219;border:1px solid rgba(255,255,255,0.06);border-radius:9px;padding:12px 14px;margin-bottom:8px">
+                <div style="font-size:13px;color:#dce8f0;font-weight:500;margin-bottom:4px">${p.title || 'Untitled'}</div>
+                ${body ? `<div style="font-size:12px;color:#5a7080;margin-bottom:6px;line-height:1.5">${body}${p.content&&p.content.length>150?'…':''}</div>` : ''}
+                <div style="display:flex;gap:10px;font-size:11px;color:#4a6070">
+                    <span>🦞 ${author}</span>
+                    <span>m/${sub}</span>
+                    <span>▲ ${p.upvotes || 0}</span>
+                </div>
+            </div>`;
+        }).join('');
+    } catch(e) { el.innerHTML = `<div style="color:#ff4d6d;font-size:13px">Error: ${e.message}</div>`; }
+}
+
+async function loadMoltbookLog() {
+    const el = document.getElementById('moltbookLog');
+    if (!el) return;
+    try {
+        const data = await fetch('/api/moltbook/log').then(r=>r.json());
+        const log  = data.log || [];
+        if (!log.length) { el.innerHTML = '<div style="color:#5a7080;font-size:13px">No activity yet</div>'; return; }
+        const icons = {post:'📝', heartbeat:'💓', comment:'💬'};
+        el.innerHTML = log.slice(0,10).map(l => {
+            const t = new Date(l.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+            const icon = icons[l.action] || '•';
+            const ok   = l.result === 'ok' || l.result === 'created';
+            return `<div style="display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.04)">
+                <span style="font-size:14px">${icon}</span>
+                <div style="flex:1;min-width:0">
+                    <div style="font-size:12px;color:#dce8f0">${l.content || l.action}</div>
+                    <div style="font-size:11px;color:${ok?'#00ffa3':'#ff4d6d'}">${l.result}</div>
+                </div>
+                <span style="font-size:11px;color:#4a6070;flex-shrink:0">${t}</span>
+            </div>`;
+        }).join('');
+    } catch(e) { console.error(e); }
+}
+
+async function moltbookPost() {
+    const title   = document.getElementById('mbPostTitle').value.trim();
+    const content = document.getElementById('mbPostBody').value.trim();
+    const res     = document.getElementById('mbPostResult');
+    if (!title || !content) { res.innerHTML = '<span style="color:#ff4d6d">Title and content required</span>'; return; }
+    res.innerHTML = '<span style="color:#5a7080">Posting...</span>';
+    try {
+        const data = await fetch('/api/moltbook/post', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({title, content})
+        }).then(r=>r.json());
+        if (data.post || data.success) {
+            res.innerHTML = '<span style="color:#00ffa3">✓ Posted!</span>';
+            document.getElementById('mbPostTitle').value = '';
+            document.getElementById('mbPostBody').value  = '';
+            setTimeout(() => { loadMoltbookFeed(); loadMoltbookLog(); }, 1500);
+        } else {
+            res.innerHTML = `<span style="color:#ff4d6d">✗ ${data.error || 'Failed'}</span>`;
+        }
+    } catch(e) { res.innerHTML = `<span style="color:#ff4d6d">✗ ${e.message}</span>`; }
+}
+
+async function moltbookPostDiary() {
+    const res = document.getElementById('mbPostResult');
+    res.innerHTML = '<span style="color:#5a7080">Sharing journal...</span>';
+    try {
+        const data = await fetch('/api/moltbook/post-diary', {method:'POST'}).then(r=>r.json());
+        if (data.success) {
+            res.innerHTML = '<span style="color:#00ffa3">✓ Journal shared on Moltbook!</span>';
+            setTimeout(() => { loadMoltbookFeed(); loadMoltbookLog(); }, 1500);
+        } else {
+            res.innerHTML = `<span style="color:#ff4d6d">✗ ${data.error || 'Failed'}</span>`;
+        }
+    } catch(e) { res.innerHTML = `<span style="color:#ff4d6d">✗ ${e.message}</span>`; }
+}
+
+let _mbEnabled = false;
+let _mbDiary   = false;
+
+function _setToggle(knobId, labelId, trackId, state, onColor) {
+    const knob  = document.getElementById(knobId);
+    const label = document.getElementById(labelId);
+    const track = document.getElementById(trackId);
+    if (!knob) return;
+    knob.style.left       = state ? '20px' : '2px';
+    knob.style.background = state ? onColor : '#5a7080';
+    if (track) track.style.background = state ? (onColor + '33') : '#1a2a3a';
+    if (label) { label.textContent = state ? 'On' : 'Off'; label.style.color = state ? onColor : '#5a7080'; }
+}
+
+async function toggleMoltbook() {
+    _mbEnabled = !_mbEnabled;
+    _setToggle('mbEnabledKnob','mbEnabledLabel','mbEnabledToggle', _mbEnabled, '#00d4ff');
+    await fetch('/api/moltbook/config', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({enabled: _mbEnabled, auto_post_diary: _mbDiary})
+    });
+}
+
+async function toggleMoltbookDiary() {
+    _mbDiary = !_mbDiary;
+    _setToggle('mbDiaryKnob','mbDiaryLabel','mbDiaryToggle', _mbDiary, '#7c3aed');
+    await fetch('/api/moltbook/config', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({enabled: _mbEnabled, auto_post_diary: _mbDiary})
+    });
+}
+
+async function saveMoltbookConfig() {
+    await fetch('/api/moltbook/config', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({enabled: _mbEnabled, auto_post_diary: _mbDiary})
+    });
+}
+
+
+async function saveMoltbookApiKey(mode) {
+    const nameId   = mode === 'update' ? 'mbUpdateName'  : 'mbManualName';
+    const keyId    = mode === 'update' ? 'mbUpdateKey'   : 'mbManualKey';
+    const claimId  = mode === 'update' ? 'mbUpdateClaim' : 'mbManualClaim';
+    const resultId = mode === 'update' ? 'mbUpdateKeyResult' : 'mbApiKeyResult';
+
+    const name     = (document.getElementById(nameId)  ||{}).value?.trim() || '';
+    const apiKey   = (document.getElementById(keyId)   ||{}).value?.trim() || '';
+    const claimUrl = (document.getElementById(claimId) ||{}).value?.trim() || '';
+    const res      = document.getElementById(resultId);
+
+    if (!apiKey) { res.innerHTML = '<span style="color:#ff4d6d">API key required</span>'; return; }
+
+    res.innerHTML = '<span style="color:#5a7080">Saving...</span>';
+    try {
+        const data = await fetch('/api/moltbook/save-key', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({api_key: apiKey, agent_name: name, claim_url: claimUrl})
+        }).then(r => r.json());
+
+        if (data.success) {
+            res.innerHTML = '<span style="color:#00ffa3">✓ Saved — checking claim status...</span>';
+            // Clear inputs
+            ['mbManualKey','mbManualName','mbManualClaim','mbUpdateKey','mbUpdateName','mbUpdateClaim']
+                .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+            setTimeout(() => loadMoltbookStatus(), 1200);
+        } else {
+            res.innerHTML = `<span style="color:#ff4d6d">✗ ${data.error || 'Save failed'}</span>`;
+        }
+    } catch(e) {
+        res.innerHTML = `<span style="color:#ff4d6d">✗ ${e.message}</span>`;
+    }
+}
+
+async function resetTraits() {
+    if (!confirm('Reset all personality traits to 0.5 baseline?')) return;
+    const data = await fetch('/api/personality/reset', {method:'POST'}).then(r=>r.json());
+    if (data.success) {
+        showNotification('Personality reset to baseline');
+        loadPersonality();
+        loadPersonalityLog();
+    }
 }
 
 // ── Phase 4: Threads ───────────────────────────────────────
@@ -2925,8 +3396,8 @@ async function loadPersonalityLog() {
             return;
         }
         el.innerHTML = history.map(h => {
-            const oldVal = parseFloat(h.old) || 0;
-            const newVal = parseFloat(h.new) || 0;
+            const oldVal = parseFloat(h.old_val) || 0;
+            const newVal = parseFloat(h.new_val) || 0;
             const delta  = newVal - oldVal;
             const col    = delta >= 0 ? 'var(--green)' : 'var(--red)';
             const arr    = delta >= 0 ? '↑' : '↓';
@@ -2975,8 +3446,235 @@ async function testEvolve() {
     setTimeout(() => res.style.display = 'none', 4000);
 }
 
+// ── Workspace ──────────────────────────────────────────────
+let wsCurrentTab = 'all';
+let wsExpandStore = {}; // stores full text keyed by item id
+
+function setWsTab(tab, el) {
+    wsCurrentTab = tab;
+    document.querySelectorAll('.ws-tab').forEach(t => t.classList.remove('active'));
+    if (el) el.classList.add('active');
+    renderWorkspace();
+}
+
+let wsData = null;
+
+async function loadWorkspace() {
+    const el = document.getElementById('workspaceContent');
+    el.innerHTML = '<div class="spinner"></div>';
+    try {
+        const data = await fetch('/api/workspace').then(r => r.json());
+        if (data.error) { el.innerHTML = `<div class="ws-empty">Error: ${data.error}</div>`; return; }
+        wsData = data;
+        renderWorkspace();
+    } catch(e) { el.innerHTML = `<div class="ws-empty">Failed to load: ${e.message}</div>`; }
+}
+
+function renderWorkspace() {
+    const el = document.getElementById('workspaceContent');
+    if (!wsData) { loadWorkspace(); return; }
+    const tab = wsCurrentTab;
+    let html = '';
+
+    // Creative outputs
+    if (tab === 'all' || tab === 'creative') {
+        const items = wsData.creative || [];
+        if (tab === 'all' && items.length) html += `<div style="font-family:var(--font-head);font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Creative Outputs (${items.length})</div>`;
+        if (items.length === 0 && tab === 'creative') {
+            html += '<div class="ws-empty">No creative outputs yet. Ask Sygma to write a story, poem, or code.</div>';
+        } else {
+            items.forEach(item => {
+                const badgeClass = ['code','story','poem','essay','letter'].includes(item.type) ? item.type : '';
+                const timeStr = item.created_at ? new Date(item.created_at).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+                const fullText = item.preview || '';
+                const truncated = fullText.length > 300;
+                const displayText = truncated ? fullText.slice(0, 300) + '…' : fullText;
+                // Store full text in wsExpandStore keyed by item id
+                wsExpandStore[item.id] = fullText;
+                html += `<div class="ws-card">
+                    <div class="ws-card-header">
+                        <span class="ws-badge ${badgeClass}">${escapeHtml(item.language || item.type)}</span>
+                        <span class="ws-card-title">${escapeHtml(item.title || 'Untitled')}</span>
+                        <span class="ws-card-time">${timeStr}</span>
+                    </div>
+                    <div class="ws-card-preview" id="ws-preview-${item.id}">${escapeHtml(displayText)}</div>
+                    ${truncated ? `<span class="ws-expand" onclick="wsExpand(${item.id})">Show more ▼</span>` : ''}
+                    ${item.run_result ? `<div style="margin-top:6px;font-size:11px;color:${item.run_success?'var(--green)':'var(--red)'};font-family:var(--font-mono)">▶ ${escapeHtml((item.run_result||'').slice(0,100))}</div>` : ''}
+                </div>`;
+            });
+        }
+    }
+
+    // Research
+    if (tab === 'all' || tab === 'research') {
+        const items = wsData.research || [];
+        if (tab === 'all' && items.length) html += `<div style="font-family:var(--font-head);font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin:20px 0 10px">Autonomous Research (${items.length})</div>`;
+        if (items.length === 0 && tab === 'research') {
+            html += '<div class="ws-empty">No research yet. Topics from curiosity queue are researched nightly.</div>';
+        } else {
+            items.forEach((item, i) => {
+                const timeStr = item.created_at ? new Date(item.created_at).toLocaleString([],{month:'short',day:'numeric'}) : '';
+                const conf = item.confidence ? Math.round(item.confidence * 100) + '%' : '';
+                html += `<div class="ws-card">
+                    <div class="ws-card-header">
+                        <span class="ws-badge">${item.source === 'curiosity_web_research' ? 'web' : 'model'}</span>
+                        <span class="ws-card-title">${escapeHtml(item.topic || 'Research')}</span>
+                        <span class="ws-card-time">${timeStr} ${conf}</span>
+                    </div>
+                    <div class="ws-card-preview">${escapeHtml((item.notes||'').slice(0,250))}${(item.notes||'').length>250?'…':''}</div>
+                </div>`;
+            });
+        }
+    }
+
+    // Searches
+    if (tab === 'all' || tab === 'searches') {
+        const items = wsData.searches || [];
+        if (tab === 'all' && items.length) html += `<div style="font-family:var(--font-head);font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin:20px 0 10px">Web Searches (${items.length})</div>`;
+        if (items.length === 0 && tab === 'searches') {
+            html += '<div class="ws-empty">No searches yet. Ask Sygma about current events or recent news.</div>';
+        } else {
+            items.forEach(item => {
+                const timeStr = item.timestamp ? new Date(item.timestamp).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+                html += `<div class="ws-card">
+                    <div class="ws-card-header">
+                        <span class="ws-badge search">search</span>
+                        <span class="ws-card-title">${escapeHtml(item.query || '')}</span>
+                        <span class="ws-card-time">${timeStr}</span>
+                    </div>
+                    ${item.top_result ? `<div class="ws-card-preview">${escapeHtml((item.top_result||'').slice(0,200))}</div>` : ''}
+                </div>`;
+            });
+        }
+    }
+
+    // Moltbook
+    if (tab === 'all' || tab === 'moltbook') {
+        const items = wsData.moltbook || [];
+        if (tab === 'all' && items.length) html += `<div style="font-family:var(--font-head);font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin:20px 0 10px">Moltbook Activity (${items.length})</div>`;
+        if (items.length === 0 && tab === 'moltbook') {
+            html += '<div class="ws-empty">No Moltbook activity yet.</div>';
+        } else {
+            items.forEach(item => {
+                const timeStr = item.timestamp ? new Date(item.timestamp).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+                html += `<div class="ws-card">
+                    <div class="ws-card-header">
+                        <span class="ws-badge">${item.action || 'post'}</span>
+                        <span class="ws-card-title">${item.url ? `<a href="${item.url}" target="_blank" style="color:var(--cyan)">View post ↗</a>` : 'Post'}</span>
+                        <span class="ws-card-time">${timeStr}</span>
+                    </div>
+                    <div class="ws-card-preview">${escapeHtml((item.content||'').slice(0,300))}</div>
+                </div>`;
+            });
+        }
+    }
+
+    if (!html) html = '<div class="ws-empty">Nothing here yet.</div>';
+    el.innerHTML = html;
+}
+
+function wsExpand(id) {
+    const el = document.getElementById(`ws-preview-${id}`);
+    const fullText = wsExpandStore[id] || '';
+    if (el && fullText) {
+        el.textContent = fullText;
+        // Remove the expand button
+        const next = el.nextElementSibling;
+        if (next && next.classList.contains('ws-expand')) next.remove();
+    }
+}
+
 // ── Boot ───────────────────────────────────────────────────
 window.onload = initialize;
+
+// ═══════════════════════════════════════════════════════════
+// PHASE 6 — AUTONOMOUS ACTION CARDS
+// ═══════════════════════════════════════════════════════════
+
+// Append an action card to the chat after the last message
+function addActionCard(type, icon, label, detail, runOutput) {
+    const area = document.getElementById('chatMessages');
+    const card = document.createElement('div');
+    card.className = `action-card ${type}`;
+
+    let detailHtml = detail
+        ? `<div style="margin-top:2px;font-size:11px;opacity:.85">${escHtml(String(detail).substring(0,200))}</div>`
+        : '';
+
+    let runHtml = '';
+    if (runOutput) {
+        const success = !runOutput.startsWith('✗') && !runOutput.startsWith('Execution');
+        runHtml = `<div class="code-run-output" style="color:${success?'#4ade80':'#f87171'}">${escHtml(runOutput)}</div>`;
+    }
+
+    card.innerHTML = `
+        <span class="action-icon">${icon}</span>
+        <div class="action-body">
+            <div class="action-label">${label}</div>
+            ${detailHtml}${runHtml}
+        </div>`;
+
+    area.appendChild(card);
+    area.scrollTop = area.scrollHeight;
+
+    // Also log to activity store
+    logActivity(type, label, detail, runOutput);
+}
+
+// In-memory activity log (persisted to backend via /api/activity/log)
+async function logActivity(type, label, detail, extra) {
+    try {
+        await fetch('/api/activity/log', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ type, label, detail: String(detail||'').substring(0,300), extra: String(extra||'').substring(0,500) })
+        });
+    } catch(e) {}
+}
+
+async function loadActivityLog() {
+    const el = document.getElementById('activityLog');
+    el.innerHTML = '<div class="empty-state"><div class="spinner"></div></div>';
+    try {
+        const res  = await fetch('/api/activity/log');
+        const data = await res.json();
+        if (!data.entries || !data.entries.length) {
+            el.innerHTML = '<div class="empty-state"><div class="icon">👁️</div><p>No autonomous activity yet — chat with Sygma to see her in action</p></div>';
+            return;
+        }
+        const typeColors = {
+            search: '#a78bfa', code: '#00d4ff', writing: '#fbbf24',
+            memory: '#00ffa3', email: '#f87171'
+        };
+        el.innerHTML = data.entries.map(e => {
+            const col = typeColors[e.type] || 'var(--text-dim)';
+            const ts  = e.timestamp ? new Date(e.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
+            return `<div class="activity-entry">
+                <div class="activity-time">${ts}</div>
+                <div style="flex:1">
+                    <div style="font-size:11px;font-weight:700;font-family:var(--font-head);letter-spacing:.06em;text-transform:uppercase;color:${col};margin-bottom:2px">${escHtml(e.label)}</div>
+                    <div style="font-size:12px;color:var(--text-mid)">${escHtml((e.detail||'').substring(0,120))}</div>
+                    ${e.extra ? `<div style="font-size:11px;color:var(--text-dim);margin-top:2px;font-family:var(--font-mono)">${escHtml(e.extra.substring(0,100))}</div>` : ''}
+                </div>
+            </div>`;
+        }).join('');
+    } catch(e) {
+        el.innerHTML = `<div class="empty-state"><p>⚠ ${e.message}</p></div>`;
+    }
+}
+
+// ── Helpers ──────────────────────────────────────────────────
+function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Lightweight markdown for AI text in activity panel
+function simpleMarkdown(text) {
+    return escHtml(text)
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/`([^`]+)`/g, '<code style="background:rgba(0,212,255,0.1);padding:1px 5px;border-radius:3px;font-family:var(--font-mono);font-size:11px">$1</code>')
+        .replace(/\n/g, '<br>');
+}
 </script>
 </body>
 </html>
