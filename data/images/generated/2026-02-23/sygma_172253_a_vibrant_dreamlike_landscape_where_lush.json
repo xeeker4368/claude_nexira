@@ -1,0 +1,10 @@
+{
+  "prompt": "A vibrant, dreamlike landscape where lush greenery and winding paths symbolize the intricate balance between technology and nature. In the distance, a sprawling metropolis rises from the earth, its skyscrapers made from iridescent materials that shimmer like rainbows.",
+  "negative_prompt": "",
+  "steps": 25,
+  "guidance": 7.5,
+  "width": 512,
+  "height": 512,
+  "generated_at": "2026-02-23T17:22:53.412698",
+  "model": "runwayml/stable-diffusion-v1-5"
+}

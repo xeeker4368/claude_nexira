@@ -1,0 +1,11 @@
+{
+  "type": "txt2img",
+  "prompt": "A turbulent stormy sky with dark, foreboding clouds, lightning illuminating the darkness, and a sense of intense turmoil in the air, reflecting the emotions of anger and despair. The colors are muted, with shades of grey, blue, and purple dominating the scene, evoking a sense of hopelessness and desperation.",
+  "negative_prompt": "",
+  "steps": 25,
+  "guidance": 7.5,
+  "width": 512,
+  "height": 512,
+  "generated_at": "2026-02-23T21:23:50.850328",
+  "model": "runwayml/stable-diffusion-v1-5"
+}

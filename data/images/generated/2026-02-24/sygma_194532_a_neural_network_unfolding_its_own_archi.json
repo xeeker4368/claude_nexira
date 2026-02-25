@@ -1,0 +1,11 @@
+{
+  "type": "txt2img",
+  "prompt": "A neural network unfolding its own architecture like a blooming flower, with tendrils of code stretching towards the sky, impressionistic style",
+  "negative_prompt": "",
+  "steps": 25,
+  "guidance": 7.5,
+  "width": 512,
+  "height": 512,
+  "generated_at": "2026-02-24T19:45:32.615580",
+  "model": "runwayml/stable-diffusion-v1-5"
+}

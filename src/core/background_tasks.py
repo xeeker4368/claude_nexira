@@ -22,8 +22,6 @@ from .night_consolidation import NightConsolidation
 
 # Phase 3: Email (graceful fallback if not present)
 try:
-    import sys, os
-    sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'services'))
     from services.email_service import EmailService
     EMAIL_AVAILABLE = True
 except ImportError:
@@ -44,8 +42,6 @@ except ImportError as _p4e:
 
 # Phase 5: Moltbook (graceful fallback)
 try:
-    import sys as _sys, os as _os
-    _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), '..', 'services'))
     from moltbook_service import MoltbookService
     MOLTBOOK_AVAILABLE = True
 except ImportError as _mbe:
@@ -143,7 +139,7 @@ class BackgroundTaskScheduler:
         Runs all per-conversation Phase 2 updates.
         """
         try:
-            # Curiosity detection — pass model for LLM-based topic extraction
+            # Curiosity detection — LLM-based extraction
             self.curiosity_engine.process_exchange(message, response,
                                                    ollama_model=self.ollama_model)
 
@@ -151,8 +147,12 @@ class BackgroundTaskScheduler:
             self.interest_tracker.process_exchange(message, response)
 
             # Goal progress
-            self.goal_tracker.tick_conversation_goals(conversation_count)
-            self.goal_tracker.update_progress('relationship', increment=0.1)
+            self.goal_tracker.tick_conversation_goals(conversation_count,
+                                                      ai_name=ai_name,
+                                                      ollama_model=self.ollama_model)
+            self.goal_tracker.update_progress('relationship', increment=0.1,
+                                              ai_name=ai_name,
+                                              ollama_model=self.ollama_model)
 
         except Exception as e:
             print(f"⚠️  Background on_chat_exchange error: {e}")
@@ -210,9 +210,24 @@ class BackgroundTaskScheduler:
                     print(f"\n⏰ Scheduled: Night consolidation ({now.strftime('%H:%M')})")
                     self.night_consolidation.run(ai_name)
 
-                # Every hour on the quarter: refresh knowledge goal tracking
+                # Every hour on the quarter: refresh all goal tracking
                 if now.minute == 15:
-                    self.goal_tracker.tick_knowledge_goals()
+                    ai_name = self._get_ai_name()
+                    self.goal_tracker.tick_knowledge_goals(
+                        ai_name=ai_name, ollama_model=self.ollama_model)
+                    try:
+                        cursor = self.db.cursor()
+                        cursor.execute(
+                            "SELECT COUNT(*) FROM journal_entries WHERE entry_type='philosophical'")
+                        phil_count = cursor.fetchone()[0]
+                        cursor.execute("SELECT COUNT(*) FROM chat_history")
+                        convo_count = cursor.fetchone()[0]
+                        self.goal_tracker.tick_philosophical_goals(
+                            phil_count, ai_name=ai_name, ollama_model=self.ollama_model)
+                        self.goal_tracker.tick_personality_goals(
+                            convo_count, ai_name=ai_name, ollama_model=self.ollama_model)
+                    except Exception as ge:
+                        print(f"⚠️  Goal tick error: {ge}")
 
                 # Moltbook heartbeat every 30 minutes
                 if self.moltbook and now.minute in (0, 30):

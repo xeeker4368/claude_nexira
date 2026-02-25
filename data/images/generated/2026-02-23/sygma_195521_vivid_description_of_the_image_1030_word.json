@@ -1,0 +1,11 @@
+{
+  "type": "txt2img",
+  "prompt": "[vivid description of the image \u2014 10-30 words works best]",
+  "negative_prompt": "",
+  "steps": 25,
+  "guidance": 7.5,
+  "width": 512,
+  "height": 512,
+  "generated_at": "2026-02-23T19:55:21.370919",
+  "model": "runwayml/stable-diffusion-v1-5"
+}

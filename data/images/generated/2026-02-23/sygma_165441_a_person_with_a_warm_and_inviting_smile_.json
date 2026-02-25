@@ -1,0 +1,10 @@
+{
+  "prompt": "A person with a warm and inviting smile, sitting comfortably in a cozy space surrounded by books and gentle ambient lighting. Their eyes are closed, and their face is relaxed, conveying a sense of calmness and friendliness. They have a subtle air of curiosity, as if they're always ready to learn or explore something new. The image should capture the essence of your personality and presence in this conversation.",
+  "negative_prompt": "",
+  "steps": 25,
+  "guidance": 7.5,
+  "width": 512,
+  "height": 512,
+  "generated_at": "2026-02-23T16:54:41.910896",
+  "model": "runwayml/stable-diffusion-v1-5"
+}

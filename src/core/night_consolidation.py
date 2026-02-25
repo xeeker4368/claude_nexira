@@ -16,6 +16,17 @@ While the user sleeps, the AI:
 import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
+try:
+    from core.ai_engine import get_ollama_options
+except ImportError:
+    def get_ollama_options(config):
+        hw = config.get('hardware', {})
+        opts = {'num_ctx': hw.get('context_window', 4096), 'num_thread': hw.get('num_threads', 4)}
+        if hw.get('gpu_enabled', True) and hw.get('num_gpu', 1) > 0:
+            opts['num_gpu'] = 999
+        else:
+            opts['num_gpu'] = 0
+        return opts
 
 
 class NightConsolidation:
@@ -112,8 +123,9 @@ class NightConsolidation:
                 print("  No conversations to consolidate.")
                 return 0
 
+            user_name = self.config.get('ai', {}).get('user_name', 'User')
             conversation_text = "\n".join(
-                f"{'Xeeker' if r[0]=='user' else 'Me'}: {r[1][:200]}"
+                f"{user_name if r[0]=='user' else 'Me'}: {r[1][:200]}"
                 for r in rows
             )
 
@@ -140,7 +152,8 @@ Format each as a JSON object on its own line. Only output JSON lines. No other t
 
             response = ollama.generate(
                 model=self.ollama_model,
-                prompt=prompt
+                prompt=prompt,
+                options=get_ollama_options(self.config)
             )
 
             # Strip think blocks from qwen3
@@ -238,7 +251,8 @@ Write it in first person — this is your own understanding."""
 
                     response = ollama.generate(
                         model=self.ollama_model,
-                        prompt=prompt
+                        prompt=prompt,
+                        options=get_ollama_options(self.config)
                     )
 
                     import re
@@ -302,7 +316,7 @@ Write it in first person — this is your own understanding."""
             cursor = self.db.cursor()
             cursor.execute("""
                 SELECT content FROM journal_entries
-                ORDER BY created_at DESC LIMIT 2
+                ORDER BY timestamp DESC LIMIT 2
             """)
             recent_journals = [r[0][:300] for r in cursor.fetchall()]
             journal_context = "\n\n".join(recent_journals) if recent_journals else ""
@@ -341,7 +355,8 @@ Write only the title and post. Nothing else."""
 
             response = ollama.generate(
                 model=self.ollama_model,
-                prompt=prompt
+                prompt=prompt,
+                options=get_ollama_options(self.config)
             )
 
             raw = re.sub(r'<think>.*?</think>', '', response['response'],
@@ -462,26 +477,50 @@ Write only the title and post. Nothing else."""
         if self.goal_tracker:
             self.goal_tracker.tick_knowledge_goals()
 
+        # Feature 1 & 5: Adaptation — update operating notes and generate self-authored goals
+        try:
+            from core.self_adaptation import SelfAdaptation
+            adaptation = SelfAdaptation(self.db, self.config)
+
+            # Update operating notes from recent conversation
+            cursor = self.db.cursor()
+            cursor.execute("""
+                SELECT role, content FROM chat_history
+                ORDER BY timestamp DESC LIMIT 20
+            """)
+            rows = cursor.fetchall()
+            recent_messages = [{'role': r[0], 'content': r[1]} for r in reversed(rows)]
+            adaptation.update_operating_notes(ai_name or "AI", recent_messages)
+
+            # Generate self-authored goals
+            adaptation.generate_self_authored_goals(ai_name or "AI")
+        except Exception as adapt_err:
+            print(f"  ⚠️  Adaptation step error (non-fatal): {adapt_err}")
+
         # Log the run
         duration = (datetime.now() - start_time).total_seconds()
         summary['duration_seconds'] = round(duration, 2)
 
-        cursor.execute("""
-            INSERT INTO consolidation_log
-            (run_date, conversations_processed, knowledge_items_added,
-             journal_entries_written, curiosity_topics_processed,
-             duration_seconds, summary)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (
-            summary['run_date'],
-            summary['conversations_processed'],
-            summary['knowledge_items_added'],
-            summary['journal_entries_written'],
-            summary['curiosity_topics_processed'],
-            summary['duration_seconds'],
-            json.dumps(summary)
-        ))
-        self.db.commit()
+        try:
+            cursor = self.db.cursor()
+            cursor.execute("""
+                INSERT INTO consolidation_log
+                (run_date, conversations_processed, knowledge_items_added,
+                 journal_entries_written, curiosity_topics_processed,
+                 duration_seconds, summary)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                summary['run_date'],
+                summary['conversations_processed'],
+                summary['knowledge_items_added'],
+                summary['journal_entries_written'],
+                summary['curiosity_topics_processed'],
+                summary['duration_seconds'],
+                json.dumps(summary)
+            ))
+            self.db.commit()
+        except Exception as e:
+            print(f"⚠️  Error logging consolidation run: {e}")
 
         print(f"✅ Night consolidation complete in {duration:.1f}s")
         print(f"   📚 +{summary['knowledge_items_added']} knowledge items")

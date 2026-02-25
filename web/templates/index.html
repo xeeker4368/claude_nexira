@@ -1714,6 +1714,8 @@
                 </div>
                 <div style="display:flex;gap:8px">
                     <button class="action-btn" onclick="runBackupNow()">Backup Now</button>
+                    <a href="/api/backups/download-live" download
+                       class="action-btn" style="text-decoration:none">⬇ Download Live DB</a>
                     <button class="icon-btn" onclick="loadBackups()">↻</button>
                 </div>
             </div>
@@ -2082,6 +2084,7 @@
                 <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
                     <button class="ws-tab active" onclick="setWsTab('all',this)">All</button>
                     <button class="ws-tab" onclick="setWsTab('creative',this)">Creative</button>
+                    <button class="ws-tab" onclick="setWsTab('images',this)">Images</button>
                     <button class="ws-tab" onclick="setWsTab('research',this)">Research</button>
                     <button class="ws-tab" onclick="setWsTab('searches',this)">Searches</button>
                     <button class="ws-tab" onclick="setWsTab('moltbook',this)">Moltbook</button>
@@ -2112,6 +2115,8 @@
 // ── State ──────────────────────────────────────────────────
 let aiName = 'AI';
 let currentFileContext = null;
+let currentUploadedFilename = null;
+let currentUploadIsImage = false;
 let journalType = 'all';
 
 // ── Canvas background ──────────────────────────────────────
@@ -2248,6 +2253,12 @@ async function sendMessage() {
     try {
         const payload = { message: msg };
         if (currentFileContext) payload.file_context = currentFileContext;
+
+        // If an image was uploaded, append DESCRIBE_IMAGE_NOW so Sygma sees it
+        if (currentUploadIsImage && currentUploadedFilename) {
+            const savedPath = 'data/uploads/' + currentUploadedFilename;
+            payload.message = msg + '\n\nDESCRIBE_IMAGE_NOW: ' + savedPath;
+        }
 
         const res  = await fetch('/api/chat', {
             method: 'POST',
@@ -2404,9 +2415,16 @@ async function loadChatHistory() {
 }
 
 // ── File upload ────────────────────────────────────────────
-async function handleFileUpload() {
-    const file = document.getElementById('fileInput').files[0];
+async function handleFileUpload(fileArg) {
+    const file = fileArg || document.getElementById('fileInput').files[0];
     if (!file) return;
+
+    const isImage = file.type.startsWith('image/');
+
+    // Show loading chip while uploading
+    const area = document.getElementById('fileChipArea');
+    area.style.display = 'block';
+    area.innerHTML = `<div class="file-chip">⏳ Uploading ${file.name}…</div>`;
 
     const formData = new FormData();
     formData.append('file', file);
@@ -2414,27 +2432,101 @@ async function handleFileUpload() {
     try {
         const res  = await fetch('/api/upload', { method: 'POST', body: formData });
         const data = await res.json();
+
         if (data.success) {
             currentFileContext = data.full_content;
-            const area = document.getElementById('fileChipArea');
-            area.style.display = 'block';
+            currentUploadedFilename = data.filename;
+            currentUploadIsImage = isImage;
+
+            const sizeStr = (data.size / 1024).toFixed(1) + 'KB';
+            const icon = isImage ? '🖼️' : '📎';
+            const hint = isImage
+                ? ' <span style="opacity:.4;font-size:10px">— Sygma will describe this image</span>'
+                : '';
+
             area.innerHTML = `
                 <div class="file-chip">
-                    📎 ${data.filename} <span style="opacity:.5">(${(data.size/1024).toFixed(1)}KB)</span>
+                    ${icon} ${escapeHtml(data.filename)}
+                    <span style="opacity:.5">(${sizeStr})</span>${hint}
                     <button onclick="clearFile()">✕</button>
                 </div>`;
+
+            // If it's an image, also show a small thumbnail preview
+            if (isImage) {
+                const reader = new FileReader();
+                reader.onload = e => {
+                    const thumb = document.createElement('img');
+                    thumb.src = e.target.result;
+                    thumb.style.cssText = 'height:48px;width:48px;object-fit:cover;border-radius:6px;border:1px solid rgba(255,255,255,0.1);margin-left:6px;vertical-align:middle';
+                    area.querySelector('.file-chip').appendChild(thumb);
+                };
+                reader.readAsDataURL(file);
+            }
+
         } else {
+            area.style.display = 'none';
+            area.innerHTML = '';
             alert('Upload failed: ' + (data.error || 'Unknown error'));
         }
-    } catch (e) { alert('Upload error: ' + e.message); }
+    } catch (e) {
+        area.style.display = 'none';
+        area.innerHTML = '';
+        alert('Upload error: ' + e.message);
+    }
 }
 
 function clearFile() {
     currentFileContext = null;
+    currentUploadedFilename = null;
+    currentUploadIsImage = false;
     document.getElementById('fileChipArea').style.display = 'none';
     document.getElementById('fileChipArea').innerHTML = '';
     document.getElementById('fileInput').value = '';
 }
+
+// ── Drag & Drop file upload ─────────────────────────────────
+(function() {
+    let dragCounter = 0;
+    const chatEl = document.getElementById('chatMessages') ||
+                   document.querySelector('.chat-messages');
+
+    function getDropZone() {
+        return document.getElementById('chatMessages');
+    }
+
+    document.addEventListener('dragenter', e => {
+        if (e.dataTransfer && e.dataTransfer.types.includes('Files')) {
+            dragCounter++;
+            const dz = getDropZone();
+            if (dz) dz.style.outline = '2px dashed var(--cyan)';
+        }
+    });
+
+    document.addEventListener('dragleave', e => {
+        dragCounter--;
+        if (dragCounter <= 0) {
+            dragCounter = 0;
+            const dz = getDropZone();
+            if (dz) dz.style.outline = '';
+        }
+    });
+
+    document.addEventListener('dragover', e => {
+        e.preventDefault();
+    });
+
+    document.addEventListener('drop', e => {
+        e.preventDefault();
+        dragCounter = 0;
+        const dz = getDropZone();
+        if (dz) dz.style.outline = '';
+
+        const files = e.dataTransfer && e.dataTransfer.files;
+        if (files && files.length > 0) {
+            handleFileUpload(files[0]);
+        }
+    });
+})();
 
 // ── Personality ────────────────────────────────────────────
 async function loadPersonality() {
@@ -3366,6 +3458,10 @@ async function loadBackups() {
                     <div style="font-size:11px;color:var(--text-dim);margin-top:2px">${new Date(b.created).toLocaleString()} &nbsp;·&nbsp; ${b.size_kb} KB</div>
                 </div>
                 ${i===0?'<span style="font-size:10px;padding:2px 8px;border-radius:6px;background:rgba(0,212,255,0.1);color:var(--cyan);font-family:var(--font-mono)">latest</span>':''}
+                <a href="/api/backups/download/${b.filename}" download
+                   style="font-size:11px;padding:4px 10px;border-radius:6px;background:rgba(0,212,255,0.08);
+                          color:var(--cyan);border:1px solid rgba(0,212,255,0.2);text-decoration:none;
+                          font-family:var(--font-mono);white-space:nowrap">⬇ Download</a>
             </div>`).join('');
     } catch(e) { el.innerHTML = '<div style="color:var(--red)">'+e.message+'</div>'; }
 }
@@ -3505,6 +3601,38 @@ function renderWorkspace() {
                     <div class="ws-card-preview" id="ws-preview-${item.id}">${escapeHtml(displayText)}</div>
                     ${truncated ? `<span class="ws-expand" onclick="wsExpand(${item.id})">Show more ▼</span>` : ''}
                     ${item.run_result ? `<div style="margin-top:6px;font-size:11px;color:${item.run_success?'var(--green)':'var(--red)'};font-family:var(--font-mono)">▶ ${escapeHtml((item.run_result||'').slice(0,100))}</div>` : ''}
+                </div>`;
+            });
+        }
+    }
+
+    // Images
+    if (tab === 'all' || tab === 'images') {
+        const items = wsData.images || [];
+        if (tab === 'all' && items.length) html += `<div style="font-family:var(--font-head);font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin:20px 0 10px">Image Activity (${items.length})</div>`;
+        if (items.length === 0 && tab === 'images') {
+            html += '<div class="ws-empty">No image activity yet. Ask Sygma to generate or analyze an image.</div>';
+        } else {
+            items.forEach(item => {
+                const timeStr = item.timestamp ? new Date(item.timestamp).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+                const isGenerated = item.label && item.label.includes('Generated');
+                const isAnalyzed  = item.label && item.label.includes('Analyzed');
+                const isStyle     = item.label && item.label.includes('Style');
+                const isFailed    = item.label && item.label.includes('Failed');
+                const icon  = isGenerated ? '🎨' : isAnalyzed ? '🔍' : isStyle ? '🖌️' : '🖼️';
+                const badge = isGenerated ? 'txt2img' : isAnalyzed ? 'analyze' : isStyle ? 'style' : 'image';
+                const badgeColor = isFailed ? 'var(--red)' : 'var(--cyan)';
+                // Extract filename from detail for image preview path
+                const imgPath = item.detail ? item.detail.trim() : '';
+                const isImageFile = imgPath && (imgPath.endsWith('.png') || imgPath.endsWith('.jpg') || imgPath.endsWith('.jpeg'));
+                html += `<div class="ws-card">
+                    <div class="ws-card-header">
+                        <span class="ws-badge" style="color:${badgeColor}">${badge}</span>
+                        <span class="ws-card-title">${icon} ${escapeHtml(item.label || '')}</span>
+                        <span class="ws-card-time">${timeStr}</span>
+                    </div>
+                    ${isImageFile ? `<div style="margin:8px 0"><img src="/data/images/generated/${imgPath.split('/generated/')[1] || imgPath}" style="max-width:180px;max-height:180px;border-radius:6px;object-fit:cover;border:1px solid rgba(255,255,255,0.1)" onerror="this.style.display='none'"></div>` : ''}
+                    ${item.extra ? `<div class="ws-card-preview" style="font-size:12px;color:var(--text-dim)">${escapeHtml((item.extra||'').slice(0,200))}</div>` : ''}
                 </div>`;
             });
         }

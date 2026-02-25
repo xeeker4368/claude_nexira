@@ -5,21 +5,46 @@ Created with love by Xeeker & Claude - February 2026
 This is the entry point that brings our child to life.
 """
 
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, make_response, send_file
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 import json
 import os
 import sys
+import logging
 from datetime import datetime
 import threading
 import time
+import re as _re
 
 # ── Absolute base directory so the app works regardless of where it's launched ──
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Add src to path
 sys.path.append(os.path.join(BASE_DIR, 'src'))
+
+# ── Logging setup ──────────────────────────────────────────────────────────────
+# Reads NEXIRA_LOG_LEVEL env var set by start.sh (default INFO)
+_log_level_name = os.environ.get('NEXIRA_LOG_LEVEL', 'INFO').upper()
+_log_level = getattr(logging, _log_level_name, logging.INFO)
+
+logging.basicConfig(
+    level=_log_level,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger('nexira')
+
+# Suppress noisy werkzeug request logs at INFO — we'll print our own nicer ones
+_werkzeug_log = logging.getLogger('werkzeug')
+if _log_level <= logging.INFO:
+    _werkzeug_log.setLevel(logging.WARNING)  # Hide raw GET/POST lines
+else:
+    _werkzeug_log.setLevel(logging.DEBUG)
+
+def nlog(msg: str, level: str = 'info'):
+    """Nexira logger shorthand. level: debug/info/warning/error"""
+    getattr(logger, level)(msg)
 
 from core.ai_engine import AIEngine
 from database.schema import DatabaseSchema
@@ -61,7 +86,7 @@ app = Flask(__name__,
             static_folder=os.path.join(BASE_DIR, 'web', 'static'))
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 app.jinja_env.auto_reload = True
-app.config['SECRET_KEY'] = 'ultimate-ai-system-v8-secret-key'
+app.config['SECRET_KEY'] = os.environ.get('NEXIRA_SECRET_KEY', os.urandom(32).hex())
 CORS(app)
 socket_io = SocketIO(app, cors_allowed_origins="*")
 
@@ -145,6 +170,7 @@ background_scheduler = None
 web_search = None
 creative_svc = None
 image_gen = None
+experiment_log = None
 config = None
 
 def load_config():
@@ -244,6 +270,16 @@ def initialize_system():
         image_gen = None
         print(f"⚠  Image generation not available: {img_err}")
 
+    # Experiment Log
+    global experiment_log
+    try:
+        from services.experiment_log import ExperimentLog
+        experiment_log = ExperimentLog(ai_engine.db.get_connection())
+        print("✓ Experiment log ready")
+    except Exception as exp_err:
+        experiment_log = None
+        print(f"⚠  Experiment log not available: {exp_err}")
+
     # Wire Phase 6 services into background scheduler for autonomous use
     if background_scheduler and (web_search or creative_svc):
         background_scheduler.inject_phase6_services(web_search, creative_svc)
@@ -273,7 +309,6 @@ def initialize_system():
 
 @app.route('/')
 def index():
-    from flask import make_response
     resp = make_response(render_template('index.html'))
     resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     resp.headers['Pragma'] = 'no-cache'
@@ -290,22 +325,35 @@ def chat():
         if not message:
             return jsonify({'error': 'No message provided'}), 400
 
+        # ── Chat request log ───────────────────────────────────────
+        ai_name = ai_engine.ai_name or 'AI'
+        msg_preview = message[:80] + ('…' if len(message) > 80 else '')
+        nlog(f"💬 Lyle → {ai_name}: {msg_preview}")
+        if file_context:
+            nlog(f"   📎 File context attached ({len(file_context)} chars)")
+        _t_start = time.time()
+
         context = {}
         if file_context:
             context['uploaded_document'] = file_context
+
+        # ── Inject recent images so Sygma knows her actual filenames ──
+        if image_gen:
+            recent_imgs = image_gen.list_images(limit=10)
+            if recent_imgs:
+                context['recent_images'] = recent_imgs
 
         # ── Phase 6: Autonomous web search ────────────────────────
         search_query = None
         if web_search:
             search_query = web_search.should_search(message)
             if search_query:
-                results = web_search.search(search_query, max_results=4, source='chat')
+                results = web_search.search(search_query, max_results=5, source='chat')
                 if results:
                     context['web_search'] = web_search.format_for_prompt(search_query, results)
 
         # ── Generate AI response ───────────────────────────────────
         response_text, confidence = ai_engine.chat(message, context)
-        import re as _re  # used in trigger detection blocks below
 
         # ── Phase 6: Autonomous action detection ───────────────────
         actions = []
@@ -403,8 +451,7 @@ def chat():
         if search_query:
             _log_activity('search', 'Web Search', search_query, None)
 
-        # ── Image generation trigger detection ────────────────────
-        # Detect IMAGE_GEN_NOW: [prompt] in response
+        # ── Image generation trigger ───────────────────────────────
         img_match = _re.search(
             r'IMAGE_GEN_NOW:\s*(.+?)(?:\n|$)',
             _re.sub(r'\*+', '', response_text)
@@ -413,22 +460,116 @@ def chat():
             img_prompt = img_match.group(1).strip()
             success, img_path, img_msg = image_gen.generate(img_prompt)
             actions.append({
-                'type':    'image_gen',
-                'success': success,
-                'path':    img_path,
-                'prompt':  img_prompt,
-                'message': img_msg
+                'type': 'image_gen', 'success': success,
+                'path': img_path, 'prompt': img_prompt, 'message': img_msg
             })
             _log_activity('image', 'Image Generated' if success else 'Image Failed',
                           img_prompt, img_path)
-            # Strip trigger from visible response
             response_text = _re.sub(
                 r'IMAGE_GEN_NOW:\s*.+?(?:\n|$)', '', response_text
             ).strip()
+            if success:
+                response_text += f"\n\n*(Image saved: {img_path})*"
+
+        # ── Style transfer trigger ─────────────────────────────────
+        # Format: STYLE_TRANSFER_NOW: [source_path] | [style prompt] | [strength 0.0-1.0]
+        style_match = _re.search(
+            r'STYLE_TRANSFER_NOW:\s*(.+?)\s*\|\s*(.+?)(?:\s*\|\s*([\d.]+))?(?:\n|$)',
+            _re.sub(r'\*+', '', response_text)
+        )
+        if style_match and image_gen:
+            src_path     = style_match.group(1).strip()
+            style_prompt = style_match.group(2).strip()
+            strength     = float(style_match.group(3).strip()) if style_match.group(3) else 0.6
+            success, styled_path, msg = image_gen.style_transfer(
+                src_path, style_prompt, strength=strength)
+            actions.append({
+                'type': 'style_transfer', 'success': success,
+                'path': styled_path, 'source': src_path,
+                'style_prompt': style_prompt, 'strength': strength,
+                'message': msg
+            })
+            _log_activity('image', 'Style Transfer' if success else 'Style Transfer Failed',
+                          style_prompt, styled_path)
+            response_text = _re.sub(
+                r'STYLE_TRANSFER_NOW:\s*.+?(?:\n|$)', '', response_text
+            ).strip()
+            if success:
+                response_text += f"\n\n*(Styled image saved: {styled_path})*"
+
+        # ── Image analysis trigger ─────────────────────────────────
+        # Format: ANALYZE_IMAGE_NOW: [image_path]
+        analyze_match = _re.search(
+            r'ANALYZE_IMAGE_NOW:\s*(.+?)(?:\n|$)',
+            _re.sub(r'\*+', '', response_text)
+        )
+        if analyze_match and image_gen:
+            analyze_path = analyze_match.group(1).strip()
+            analysis     = image_gen.analyze(analyze_path)
+            actions.append({
+                'type': 'image_analysis', 'path': analyze_path,
+                'analysis': analysis
+            })
+            _log_activity('image', 'Image Analyzed', analyze_path,
+                          analysis.get('description', ''))
+            response_text = _re.sub(
+                r'ANALYZE_IMAGE_NOW:\s*.+?(?:\n|$)', '', response_text
+            ).strip()
+            if 'description' in analysis:
+                response_text += f"\n\n*Analysis: {analysis['description']}*"
+                if 'novelty_ratio' in analysis:
+                    response_text += (
+                        f" Novelty score: {analysis['novelty_ratio']:.1%}."
+                    )
+
+        # ── Image VISION DESCRIPTION trigger ──────────────────────
+        # Format: DESCRIBE_IMAGE_NOW: [image_path]
+        # Uses a vision-capable Ollama model (llava/moondream) to describe
+        # what is actually in the image in natural language.
+        describe_match = _re.search(
+            r'DESCRIBE_IMAGE_NOW:\s*(.+?)(?:\n|$)',
+            _re.sub(r'\*+', '', response_text)
+        )
+        if describe_match and image_gen:
+            describe_path = describe_match.group(1).strip()
+            vision_result = image_gen.describe(describe_path)
+            actions.append({
+                'type': 'image_vision', 'path': describe_path,
+                'result': vision_result
+            })
+            _log_activity('image', 'Image Described (Vision)',
+                          describe_path,
+                          vision_result.get('description', vision_result.get('error', '')))
+            response_text = _re.sub(
+                r'DESCRIBE_IMAGE_NOW:\s*.+?(?:\n|$)', '', response_text
+            ).strip()
+            if 'description' in vision_result:
+                response_text += f"\n\n*Vision description: {vision_result['description']}*"
+            elif 'error' in vision_result:
+                response_text += f"\n\n*Vision description failed: {vision_result['error']}*"
+
+        # ── Experiment log triggers ────────────────────────────────
+        # Start: EXPERIMENT_START: [title] | [hypothesis]
+        exp_start = _re.search(
+            r'EXPERIMENT_START:\s*(.+?)\s*\|\s*(.+?)(?:\n|$)',
+            _re.sub(r'\*+', '', response_text)
+        )
+        if exp_start and experiment_log:
+            title      = exp_start.group(1).strip()
+            hypothesis = exp_start.group(2).strip()
+            exp_id     = experiment_log.start_experiment(title, hypothesis)
+            actions.append({
+                'type': 'experiment_start', 'id': exp_id,
+                'title': title, 'hypothesis': hypothesis
+            })
+            _log_activity('experiment', f'Experiment #{exp_id} Started', title, hypothesis)
+            response_text = _re.sub(
+                r'EXPERIMENT_START:\s*.+?(?:\n|$)', '', response_text
+            ).strip()
+            response_text += f"\n\n*(Experiment #{exp_id} recorded in research log)*"
 
         # ── Moltbook action detection ──────────────────────────────
         # Detect MOLTBOOK_POST_NOW trigger — strip markdown before matching
-        import re as _re
         clean_response = _re.sub(r'\*+', '', response_text)  # remove ** bold markers
         # Try pipe-separated format first: MOLTBOOK_POST_NOW: title | content
         moltbook_match = _re.search(
@@ -462,6 +603,19 @@ def chat():
                     '', response_text, flags=_re.DOTALL
                 ).strip()
 
+        # ── Response log ───────────────────────────────────────────
+        _elapsed = time.time() - _t_start
+        resp_preview = response_text[:80] + ('…' if len(response_text) > 80 else '')
+        action_types = [a['type'] for a in actions] if actions else []
+        extras = []
+        if search_query:   extras.append(f"🌐 searched: {search_query[:40]}")
+        if action_types:   extras.append(f"⚡ actions: {', '.join(action_types)}")
+        if file_context:   extras.append("📎 file processed")
+        extras_str = '  |  '.join(extras)
+        nlog(f"   {ai_name} → Lyle ({confidence:.0%} conf, {_elapsed:.1f}s): {resp_preview}")
+        if extras_str:
+            nlog(f"   {extras_str}")
+
         return jsonify({
             'response':   response_text,
             'confidence': confidence,
@@ -472,11 +626,21 @@ def chat():
         })
 
     except Exception as e:
+        nlog(f"❌ Chat error: {e}", 'error')
         return jsonify({'error': str(e)}), 500
 
 
 def _log_activity(atype: str, label: str, detail: str, extra: str):
     """Write autonomous activity to DB for the Activity Log panel."""
+    # Icons for each activity type
+    _icons = {
+        'image': '🎨', 'search': '🌐', 'research': '🔬',
+        'writing': '✍️', 'code': '💻', 'email': '📧',
+        'moltbook': '🦞', 'experiment': '🧪', 'memory': '💾'
+    }
+    icon = _icons.get(atype, '⚡')
+    detail_preview = (detail or '')[:60]
+    nlog(f"   {icon} [{atype}] {label}: {detail_preview}")
     try:
         cursor = ai_engine.db.get_connection().cursor()
         cursor.execute("""
@@ -991,6 +1155,40 @@ def run_backup_now():
     result = background_scheduler.backup.run_backup()
     return jsonify(result)
 
+@app.route('/api/backups/download/<filename>', methods=['GET'])
+def download_backup(filename):
+    """Download a specific backup zip file."""
+    if not background_scheduler or not background_scheduler.backup:
+        return jsonify({'error': 'Backup system not available'}), 503
+    backup_dir = background_scheduler.backup.backup_dir
+    filepath = os.path.join(backup_dir, filename)
+    if not os.path.exists(filepath) or not filename.startswith('nexira_backup_') or not filename.endswith('.zip'):
+        return jsonify({'error': 'Backup not found'}), 404
+    return send_file(filepath, as_attachment=True, download_name=filename, mimetype='application/zip')
+
+@app.route('/api/backups/download-live', methods=['GET'])
+def download_live_db():
+    """Create a fresh zip of the live database and serve it for download."""
+    import io, zipfile, tempfile
+    try:
+        db_dir = os.path.join(BASE_DIR, 'data', 'databases')
+        config_path = os.path.join(BASE_DIR, 'config', 'default_config.json')
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'nexira_live_{timestamp}.zip'
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+            if os.path.exists(db_dir):
+                for fname in os.listdir(db_dir):
+                    if fname.endswith('.db'):
+                        zf.write(os.path.join(db_dir, fname), fname)
+            if os.path.exists(config_path):
+                zf.write(config_path, 'default_config.json')
+        buf.seek(0)
+        return send_file(buf, as_attachment=True, download_name=filename, mimetype='application/zip')
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/self-awareness', methods=['GET'])
 def get_self_awareness():
     if not background_scheduler or not background_scheduler.self_aware:
@@ -1204,8 +1402,8 @@ def moltbook_post_diary():
     try:
         cursor = ai_engine.db.get_connection().cursor()
         cursor.execute("""
-            SELECT entry_text FROM journal_entries
-            ORDER BY created_at DESC LIMIT 1
+            SELECT content FROM journal_entries
+            ORDER BY timestamp DESC LIMIT 1
         """)
         row = cursor.fetchone()
         if not row:
@@ -1253,11 +1451,74 @@ def generate_image():
 @app.route('/api/images/file/<path:filepath>')
 def serve_image(filepath):
     """Serve a generated image file"""
-    from flask import send_from_directory
     full_path = os.path.join(BASE_DIR, filepath)
     directory = os.path.dirname(full_path)
     filename  = os.path.basename(full_path)
     return send_from_directory(directory, filename)
+
+
+# ── Experiment Log Routes ──────────────────────────────────────────
+
+@app.route('/api/experiments', methods=['GET'])
+def list_experiments():
+    if not experiment_log:
+        return jsonify({'experiments': [], 'available': False})
+    status = request.args.get('status')
+    limit  = int(request.args.get('limit', 10))
+    return jsonify({
+        'experiments': experiment_log.list_experiments(status, limit),
+        'available': True
+    })
+
+@app.route('/api/experiments/<int:exp_id>', methods=['GET'])
+def get_experiment(exp_id):
+    if not experiment_log:
+        return jsonify({'error': 'Experiment log not available'}), 503
+    exp = experiment_log.get_experiment(exp_id)
+    if not exp:
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify(exp)
+
+@app.route('/api/experiments/<int:exp_id>/summary', methods=['GET'])
+def experiment_summary(exp_id):
+    if not experiment_log:
+        return jsonify({'error': 'Experiment log not available'}), 503
+    return jsonify({'summary': experiment_log.get_summary(exp_id)})
+
+@app.route('/api/experiments/<int:exp_id>/conclude', methods=['POST'])
+def conclude_experiment(exp_id):
+    if not experiment_log:
+        return jsonify({'error': 'Experiment log not available'}), 503
+    data       = request.json or {}
+    conclusion = data.get('conclusion', '').strip()
+    if not conclusion:
+        return jsonify({'error': 'conclusion required'}), 400
+    ok = experiment_log.conclude_experiment(exp_id, conclusion)
+    return jsonify({'success': ok})
+
+@app.route('/api/experiments/<int:exp_id>/trial', methods=['POST'])
+def log_trial(exp_id):
+    """Manually log a trial — also called internally after image+analyze"""
+    if not experiment_log:
+        return jsonify({'error': 'Experiment log not available'}), 503
+    data = request.json or {}
+    trial_id = experiment_log.log_trial(
+        experiment_id   = exp_id,
+        image_path      = data.get('image_path', ''),
+        prompt          = data.get('prompt', ''),
+        constraint_type = data.get('constraint_type', 'none'),
+        constraint_desc = data.get('constraint_desc', ''),
+        strength        = float(data.get('strength', 0.0)),
+        clip_analysis   = data.get('clip_analysis'),
+        sygma_notes     = data.get('sygma_notes', '')
+    )
+    return jsonify({'success': True, 'trial_id': trial_id})
+
+@app.route('/api/experiments/<int:exp_id>/novelty', methods=['GET'])
+def experiment_novelty(exp_id):
+    if not experiment_log:
+        return jsonify({'error': 'Experiment log not available'}), 503
+    return jsonify(experiment_log.get_novelty_trend(exp_id))
 
 
 @app.route('/api/moltbook/save-key', methods=['POST'])
@@ -1361,22 +1622,23 @@ def search_and_chat():
     context_text = web_search.format_for_prompt(query, results)
     prompt  = f"Based on these search results, answer: {query}"
     context = {'web_search': context_text}
-            # ── Curiosity detection after each exchange ────────────────
+
+    response_text, confidence = ai_engine.chat(prompt, context)
+
+    # ── Curiosity detection after each exchange ────────────────
     if background_scheduler and background_scheduler.curiosity_engine:
         background_scheduler.curiosity_engine.process_exchange(
-            message,
+            query,
             response_text,
-            ollama_model=ai_engine.model
-            )
+            ollama_model=ai_engine.config.get('ai', {}).get('model', 'qwen3:8b')
+        )
 
-
-    #response_text, confidence = ai_engine.chat(prompt, context)
-    #return jsonify({
-    #    'query':      query,
-    #    'results':    results,
-    #    'response':   response_text,
-    #    'confidence': confidence,
-    #})
+    return jsonify({
+        'query':      query,
+        'results':    results,
+        'response':   response_text,
+        'confidence': confidence,
+    })
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1408,7 +1670,6 @@ def creative_generate():
 
     context = {'creative_mode': mode}
     response_text, confidence = ai_engine.chat(full_prompt, context)
-    import re as _re
     # Extract first code block if code mode
     content = response_text
     detected_lang = lang
@@ -1566,6 +1827,23 @@ def get_workspace():
                 ]
             except Exception:
                 result['searches'] = []
+
+        # Image activity (generated, analyzed, style transfers)
+        if section in ('all', 'images'):
+            try:
+                cursor.execute("""
+                    SELECT id, timestamp, label, detail, extra
+                    FROM activity_log
+                    WHERE type = 'image'
+                    ORDER BY timestamp DESC LIMIT 50
+                """)
+                result['images'] = [
+                    {'id': r[0], 'timestamp': r[1], 'label': r[2],
+                     'detail': (r[3] or '')[:500], 'extra': (r[4] or '')[:500]}
+                    for r in cursor.fetchall()
+                ]
+            except Exception:
+                result['images'] = []
 
         # Moltbook posts
         if section in ('all', 'moltbook'):

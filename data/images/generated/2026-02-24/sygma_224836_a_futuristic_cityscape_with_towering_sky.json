@@ -1,0 +1,11 @@
+{
+  "type": "txt2img",
+  "prompt": "a futuristic cityscape with towering skyscrapers and neon lights, impressionistic style.\" The system would then generate an image based on this description.",
+  "negative_prompt": "",
+  "steps": 25,
+  "guidance": 7.5,
+  "width": 512,
+  "height": 512,
+  "generated_at": "2026-02-24T22:48:36.179210",
+  "model": "runwayml/stable-diffusion-v1-5"
+}

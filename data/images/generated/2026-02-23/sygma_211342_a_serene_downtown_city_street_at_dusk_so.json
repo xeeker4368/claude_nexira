@@ -1,0 +1,11 @@
+{
+  "type": "txt2img",
+  "prompt": "A serene downtown city street at dusk, softly illuminated by warm golden light, with gentle wisps of fog drifting through the streets, and people walking in harmony, as if lost in their own thoughts.",
+  "negative_prompt": "",
+  "steps": 25,
+  "guidance": 7.5,
+  "width": 512,
+  "height": 512,
+  "generated_at": "2026-02-23T21:13:42.111595",
+  "model": "runwayml/stable-diffusion-v1-5"
+}

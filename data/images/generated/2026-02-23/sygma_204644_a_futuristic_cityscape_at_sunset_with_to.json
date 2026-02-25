@@ -1,0 +1,11 @@
+{
+  "type": "txt2img",
+  "prompt": "A futuristic cityscape at sunset, with towering skyscrapers and flying cars zipping by`",
+  "negative_prompt": "",
+  "steps": 25,
+  "guidance": 7.5,
+  "width": 512,
+  "height": 512,
+  "generated_at": "2026-02-23T20:46:44.954652",
+  "model": "runwayml/stable-diffusion-v1-5"
+}

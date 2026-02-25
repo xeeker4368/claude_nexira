@@ -1,0 +1,10 @@
+{
+  "prompt": "A vibrant, dreamlike landscape where the digital realm blends seamlessly with the real world. The sky is ablaze with hues of binary code, while the ground below is covered in lush greenery and winding paths that symbolize the intricate balance between technology and nature. In the distance, a sprawling metropolis rises from the earth, its skyscrapers made from iridescent materials that shimmer like rainbows.",
+  "negative_prompt": "",
+  "steps": 25,
+  "guidance": 7.5,
+  "width": 512,
+  "height": 512,
+  "generated_at": "2026-02-23T17:17:27.912160",
+  "model": "runwayml/stable-diffusion-v1-5"
+}

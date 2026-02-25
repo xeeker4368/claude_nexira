@@ -1,0 +1,11 @@
+{
+  "type": "txt2img",
+  "prompt": "A mystical forest shrouded in a thick, emerald green fog, with ferns swaying softly in the misty atmosphere, towering and slender trees rising towards the sky, their branches like wisps of smoke, and vibrant wildflowers blooming amidst the mist, their colors muted but present, as if they're about to burst into bloom.",
+  "negative_prompt": "",
+  "steps": 25,
+  "guidance": 7.5,
+  "width": 512,
+  "height": 512,
+  "generated_at": "2026-02-23T21:26:51.730378",
+  "model": "runwayml/stable-diffusion-v1-5"
+}

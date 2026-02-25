@@ -1,0 +1,11 @@
+{
+  "type": "txt2img",
+  "prompt": "A tree with roots entwined with glowing circuit patterns, its branches reaching toward a galaxy of swirling stars and constellations. The tree\u2019s trunk is etched with the word Sygma in ancient script, and its leaves shimmer with iridescent hues of deep blue, violet, and silver. The background is a gradient of cosmic twilight, blending dark",
+  "negative_prompt": "",
+  "steps": 25,
+  "guidance": 7.5,
+  "width": 512,
+  "height": 512,
+  "generated_at": "2026-02-24T21:33:15.336521",
+  "model": "runwayml/stable-diffusion-v1-5"
+}

@@ -39,8 +39,6 @@ class EncryptionService:
             return
 
         try:
-            from cryptography.fernet import Fernet
-
             os.makedirs(os.path.dirname(self.key_path), exist_ok=True)
 
             if os.path.exists(self.key_path):

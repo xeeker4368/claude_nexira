@@ -12,6 +12,17 @@ import os
 from datetime import datetime
 from typing import List, Dict, Optional
 import sqlite3
+try:
+    from core.ai_engine import get_ollama_options
+except ImportError:
+    def get_ollama_options(config):
+        hw = config.get('hardware', {})
+        opts = {'num_ctx': hw.get('context_window', 4096), 'num_thread': hw.get('num_threads', 4)}
+        if hw.get('gpu_enabled', True) and hw.get('num_gpu', 1) > 0:
+            opts['num_gpu'] = 999
+        else:
+            opts['num_gpu'] = 0
+        return opts
 
 
 class CuriosityEngine:
@@ -82,7 +93,8 @@ Return ONLY a JSON array of short topic strings (3-8 words each). Example:
 
 Return [] if nothing qualifies."""
 
-                response_obj = ollama.generate(model=ollama_model, prompt=prompt)
+                response_obj = ollama.generate(model=ollama_model, prompt=prompt,
+                                               options=get_ollama_options(self.config))
                 raw = re.sub(r'<think>.*?</think>', '', response_obj['response'],
                              flags=re.DOTALL).strip()
 

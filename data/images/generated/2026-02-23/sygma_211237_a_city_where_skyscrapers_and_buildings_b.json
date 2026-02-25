@@ -1,0 +1,11 @@
+{
+  "type": "txt2img",
+  "prompt": "A city where skyscrapers and buildings blend seamlessly into the sky, their edges softened by a warm, ethereal light. The streets are filled with a gentle, swirling mist that gives the impression of being in a perpetual state of dawn or dusk.",
+  "negative_prompt": "",
+  "steps": 25,
+  "guidance": 7.5,
+  "width": 512,
+  "height": 512,
+  "generated_at": "2026-02-23T21:12:38.011872",
+  "model": "runwayml/stable-diffusion-v1-5"
+}

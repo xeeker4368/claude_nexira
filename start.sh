@@ -18,13 +18,44 @@ else
     echo "⚠  No virtual environment found, using system Python"
 fi
 
-# Debug mode flag
-if [ "$1" == "--debug" ]; then
-    export FLASK_DEBUG=1
-    echo "Debug mode enabled"
-fi
-
 # Set PYTHONPATH explicitly so src/ is always on the path
 export PYTHONPATH="$INSTALL_DIR/src:$PYTHONPATH"
 
-python3 main.py
+# ── Logging level ──────────────────────────────────────────────
+# Default: INFO (chat activity, personality changes, background tasks)
+# --debug   : Full debug output + Flask reloader
+# --quiet   : Startup messages only, suppress request logs
+# --log     : Also write everything to logs/nexira.log
+
+LOG_LEVEL="INFO"
+WRITE_LOG=0
+
+for arg in "$@"; do
+    case $arg in
+        --debug)
+            export FLASK_DEBUG=1
+            LOG_LEVEL="DEBUG"
+            echo "🐛 Debug mode enabled"
+            ;;
+        --quiet)
+            LOG_LEVEL="WARNING"
+            echo "🔇 Quiet mode — suppressing request logs"
+            ;;
+        --log)
+            WRITE_LOG=1
+            mkdir -p "$INSTALL_DIR/logs"
+            echo "📄 Logging to logs/nexira.log"
+            ;;
+    esac
+done
+
+export NEXIRA_LOG_LEVEL="$LOG_LEVEL"
+
+# ── Run ────────────────────────────────────────────────────────
+if [ "$WRITE_LOG" == "1" ]; then
+    LOG_FILE="$INSTALL_DIR/logs/nexira_$(date +%Y%m%d_%H%M%S).log"
+    echo "📄 Log file: $LOG_FILE"
+    python3 main.py 2>&1 | tee "$LOG_FILE"
+else
+    python3 main.py
+fi

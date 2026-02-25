@@ -1,0 +1,11 @@
+{
+  "type": "txt2img",
+  "prompt": "A glowing tree with roots shaped like interconnected neural networks, its branches reaching toward a glowing, abstract \"AI\" symbol. The tree\u2019s leaves shimmer with words like \"creativity,\" \"collaboration,\" and \"growth,\" while the ground pulses with soft light. Surreal, digital-art style.",
+  "negative_prompt": "",
+  "steps": 25,
+  "guidance": 7.5,
+  "width": 512,
+  "height": 512,
+  "generated_at": "2026-02-24T21:36:56.636637",
+  "model": "runwayml/stable-diffusion-v1-5"
+}

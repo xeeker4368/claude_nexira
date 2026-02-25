@@ -93,7 +93,17 @@ GOOD examples:
 Format each as a JSON object on its own line. Only output JSON lines. No other text."""
 
     try:
-        response = ollama.generate(model=MODEL, prompt=prompt)
+        # Build hardware options from config
+        hw = cfg.get('hardware', {}) if 'cfg' in dir() else {}
+        ollama_opts = {
+            'num_ctx': hw.get('context_window', 4096),
+            'num_thread': hw.get('num_threads', 4),
+        }
+        if hw.get('gpu_enabled', True) and hw.get('num_gpu', 1) > 0:
+            ollama_opts['num_gpu'] = 999
+        else:
+            ollama_opts['num_gpu'] = 0
+        response = ollama.generate(model=MODEL, prompt=prompt, options=ollama_opts)
         raw = re.sub(r'<think>.*?</think>', '', response['response'], flags=re.DOTALL)
 
         chunk_added = 0

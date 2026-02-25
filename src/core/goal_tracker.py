@@ -10,6 +10,17 @@ and marks them complete or updates them over time.
 import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
+try:
+    from core.ai_engine import get_ollama_options
+except ImportError:
+    def get_ollama_options(config):
+        hw = config.get('hardware', {})
+        opts = {'num_ctx': hw.get('context_window', 4096), 'num_thread': hw.get('num_threads', 4)}
+        if hw.get('gpu_enabled', True) and hw.get('num_gpu', 1) > 0:
+            opts['num_gpu'] = 999
+        else:
+            opts['num_gpu'] = 0
+        return opts
 
 
 # Seed goals the AI starts with on first run
@@ -260,7 +271,8 @@ Respond with ONLY a JSON object:
 
 goal_type must be one of the exact values listed above."""
 
-            response = ollama.generate(model=ollama_model, prompt=prompt)
+            response = ollama.generate(model=ollama_model, prompt=prompt,
+                                       options=get_ollama_options(self.config))
             raw = re.sub(r'<think>.*?</think>', '', response['response'],
                          flags=re.DOTALL).strip()
 
@@ -342,8 +354,8 @@ goal_type must be one of the exact values listed above."""
                 f"- {g['name']}: [{bar}] {g['progress_pct']:.0f}%"
             )
         return "\n".join(lines)
-
-    def tick_conversation_goals(self, conversation_count: int):
+    def tick_conversation_goals(self, conversation_count: int, ai_name: str = None, ollama_model: str = None):
+#    def tick_conversation_goals(self, conversation_count: int):
         """
         Called each time a chat happens.
         Updates growth-type goals based on conversation count.
@@ -360,7 +372,9 @@ goal_type must be one of the exact values listed above."""
         except Exception as e:
             print(f"⚠️  Error ticking conversation goals: {e}")
 
-    def tick_knowledge_goals(self):
+
+    def tick_knowledge_goals(self, ai_name: str = None, ollama_model: str = None):
+#    def tick_knowledge_goals(self):
         """Update knowledge goals based on knowledge base size"""
         try:
             cursor = self.db.cursor()

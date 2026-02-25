@@ -1,0 +1,11 @@
+{
+  "type": "txt2img",
+  "prompt": "A mystical forest at dawn, with ethereal mist swirling around ancient trees, and a soft, golden light illuminating the ferns, as if the forest is awakening from a deep slumber. The atmosphere is serene and enchanting, inviting the viewer to step into its secrets.",
+  "negative_prompt": "",
+  "steps": 25,
+  "guidance": 7.5,
+  "width": 512,
+  "height": 512,
+  "generated_at": "2026-02-23T21:24:32.218855",
+  "model": "runwayml/stable-diffusion-v1-5"
+}

@@ -1,0 +1,10 @@
+{
+  "prompt": "A dreamlike cityscape where towering skyscrapers are grown from iridescent petals, blending seamlessly with lush greenery and winding paths that symbolize the intricate balance between technology and nature. In the distance, a sprawling metropolis rises from the earth, its buildings made from glittering crystal materials that reflect the vibrant hues of the digital realm.",
+  "negative_prompt": "",
+  "steps": 25,
+  "guidance": 7.5,
+  "width": 512,
+  "height": 512,
+  "generated_at": "2026-02-23T17:24:37.010515",
+  "model": "runwayml/stable-diffusion-v1-5"
+}

@@ -1,7 +1,8 @@
 {
   "_comment": "Ultimate AI System v8.0 Configuration - Created with love by Lyle & Claude",
   "ai": {
-    "model": "llama3.1:8b",
+    "model": "llama3.1:latest",
+    "vision_model": "qwen3-vl:4b",
     "ollama_url": "http://localhost:11434",
     "first_launch": false,
     "ai_name": "Sygma",
@@ -147,7 +148,7 @@
   },
   "moltbook": {
     "enabled": true,
-    "api_key": "ENC:Z0FBQUFBQnBtNms1VzNSdnVPRVpkMWdnVHdRa3pvSXRneWJoWi1UanVZQlVvbHJaZk51a1p4S3BrVDNfZWg2OTJzZFh6Z21xWnBBdnE2MmNUVEdZMGZmTXdGTkI5WUx6NlV5dGJ1VDlfYTlQS0c3anNsVlBocVdadzdyZS1kaHlydXFReEUtTk5FVm8=",
+    "api_key": "moltbook_sk_9tY9Z3uFBfkPqhPcrmqlbqmiYxfPIzhA",
     "agent_name": "Sygma",
     "claim_url": "https://www.moltbook.com/claim/moltbook_claim_Tb10S8gXOnVBjrTk1RjA_fZe24pn8lTd",
     "claimed": true,

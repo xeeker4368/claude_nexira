@@ -32,6 +32,8 @@ class DatabaseSchema:
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
 
     def connect(self):
+        if self.conn is not None:
+            return self.conn
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         return self.conn
@@ -132,12 +134,12 @@ class DatabaseSchema:
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS conversation_threads (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                topic TEXT NOT NULL,
-                first_discussed TEXT,
-                last_discussed TEXT,
-                conversation_count INTEGER DEFAULT 0,
-                evolution_timeline TEXT,
-                related_topics TEXT
+                thread_name TEXT,
+                keywords TEXT,
+                message_count INTEGER DEFAULT 0,
+                started_at TEXT,
+                last_activity TEXT,
+                summary TEXT
             )
         """)
 
@@ -242,14 +244,13 @@ class DatabaseSchema:
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS experiments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                experiment_name TEXT NOT NULL,
+                title TEXT NOT NULL,
                 hypothesis TEXT,
-                method TEXT,
-                start_date TEXT,
-                end_date TEXT,
-                results TEXT,
+                status TEXT DEFAULT 'active',
+                started_at TEXT,
+                concluded_at TEXT,
                 conclusion TEXT,
-                decision TEXT
+                tags TEXT
             )
         """)
 
@@ -297,12 +298,162 @@ class DatabaseSchema:
             )
         """)
 
+        # ── Tables created by services (centralized here for clean install) ──
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS journal_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                created_date TEXT,
+                entry_type TEXT NOT NULL,
+                title TEXT,
+                content TEXT NOT NULL,
+                mood TEXT,
+                topics TEXT,
+                word_count INTEGER DEFAULT 0
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS consolidation_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_date TEXT NOT NULL,
+                conversations_processed INTEGER DEFAULT 0,
+                knowledge_items_added INTEGER DEFAULT 0,
+                journal_entries_written INTEGER DEFAULT 0,
+                curiosity_topics_processed INTEGER DEFAULT 0,
+                duration_seconds REAL DEFAULT 0,
+                summary TEXT
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS activity_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT,
+                type TEXT,
+                label TEXT,
+                detail TEXT,
+                extra TEXT
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS self_awareness_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                self_ref_score REAL DEFAULT 0,
+                uncertainty_score REAL DEFAULT 0,
+                meta_cognition_score REAL DEFAULT 0,
+                composite_score REAL DEFAULT 0,
+                response_sample TEXT,
+                word_count INTEGER DEFAULT 0
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS thread_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                thread_id INTEGER,
+                message_id INTEGER,
+                added_at TEXT,
+                FOREIGN KEY (thread_id) REFERENCES conversation_threads(id)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS experiment_trials (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                experiment_id INTEGER NOT NULL,
+                trial_number INTEGER NOT NULL,
+                image_path TEXT,
+                prompt TEXT,
+                constraint_type TEXT,
+                constraint_desc TEXT,
+                strength REAL,
+                clip_analysis TEXT,
+                novelty_ratio REAL,
+                top_concept TEXT,
+                sygma_notes TEXT,
+                created_at TEXT,
+                FOREIGN KEY (experiment_id) REFERENCES experiments(id)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS search_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT,
+                query TEXT,
+                result_count INTEGER,
+                source TEXT,
+                top_result TEXT
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS creative_outputs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT,
+                output_type TEXT,
+                title TEXT,
+                content TEXT,
+                language TEXT,
+                prompt TEXT,
+                run_result TEXT,
+                run_success INTEGER DEFAULT 0
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS email_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sent_at TEXT NOT NULL,
+                recipient TEXT,
+                subject TEXT,
+                email_type TEXT DEFAULT 'general',
+                success INTEGER DEFAULT 0,
+                error TEXT
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS moltbook_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT,
+                action TEXT,
+                content TEXT,
+                result TEXT,
+                post_id TEXT,
+                post_url TEXT
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS moltbook_feed_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fetched_at TEXT,
+                post_id TEXT,
+                title TEXT,
+                content TEXT,
+                author TEXT,
+                upvotes INTEGER,
+                submolt TEXT
+            )
+        """)
+
+        # ── Indexes ──────────────────────────────────────────────────────
+
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_chat_timestamp ON chat_history(timestamp)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_chat_importance ON chat_history(importance_score)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_chat_platform ON chat_history(platform)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_topic ON knowledge_base(topic)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_goals_status ON goals(status)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_performance_timestamp ON performance_metrics(timestamp)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_journal_timestamp ON journal_entries(timestamp)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_journal_type ON journal_entries(entry_type)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_activity_timestamp ON activity_log(timestamp)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_consolidation_date ON consolidation_log(run_date)")
 
         self.conn.commit()
         print("✓ Database schema initialized - Memory foundation ready")

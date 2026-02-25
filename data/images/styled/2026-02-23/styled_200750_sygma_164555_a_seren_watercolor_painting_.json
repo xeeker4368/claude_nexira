@@ -1,0 +1,10 @@
+{
+  "type": "img2img",
+  "source": "data/images/generated/2026-02-23/sygma_164555_a_serene_ethereal_landscape_with_swirlin.png",
+  "style_prompt": "watercolor painting style, soft edges",
+  "strength": 0.7,
+  "steps": 30,
+  "guidance": 7.5,
+  "generated_at": "2026-02-23T20:07:50.123897",
+  "model": "runwayml/stable-diffusion-v1-5"
+}

@@ -11,6 +11,17 @@ import json
 import os
 from datetime import datetime
 from typing import Dict, List, Optional
+try:
+    from core.ai_engine import get_ollama_options
+except ImportError:
+    def get_ollama_options(config):
+        hw = config.get('hardware', {})
+        opts = {'num_ctx': hw.get('context_window', 4096), 'num_thread': hw.get('num_threads', 4)}
+        if hw.get('gpu_enabled', True) and hw.get('num_gpu', 1) > 0:
+            opts['num_gpu'] = 999
+        else:
+            opts['num_gpu'] = 0
+        return opts
 
 
 JOURNAL_TYPES = ['daily_reflection', 'philosophical', 'creative', 'learning']
@@ -47,6 +58,7 @@ class JournalSystem:
                 CREATE TABLE IF NOT EXISTS journal_entries (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp TEXT NOT NULL,
+                    created_date TEXT,
                     entry_type TEXT NOT NULL,
                     title TEXT,
                     content TEXT NOT NULL,
@@ -129,7 +141,8 @@ Write naturally and authentically. This is private reflection, not a performance
 
             response = ollama.generate(
                 model=self.ollama_model,
-                prompt=prompt
+                prompt=prompt,
+                options=get_ollama_options(self.config)
             )
 
             entry_text = response['response'].strip()
@@ -178,7 +191,8 @@ This is not performance - it is genuine reflection."""
 
             response = ollama.generate(
                 model=self.ollama_model,
-                prompt=prompt
+                prompt=prompt,
+                options=get_ollama_options(self.config)
             )
 
             entry_text = response['response'].strip()
@@ -205,9 +219,10 @@ This is not performance - it is genuine reflection."""
             cursor = self.db.cursor()
             cursor.execute("""
                 INSERT INTO journal_entries
-                (timestamp, entry_type, content, word_count)
-                VALUES (?, ?, ?, ?)
+                (timestamp, created_date, entry_type, content, word_count)
+                VALUES (?, ?, ?, ?, ?)
             """, (
+                timestamp.isoformat(),
                 timestamp.isoformat(),
                 entry_type,
                 content,
