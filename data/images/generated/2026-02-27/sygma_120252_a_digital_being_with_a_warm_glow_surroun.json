@@ -1,0 +1,11 @@
+{
+  "type": "txt2img",
+  "prompt": "A digital being with a warm glow, surrounded by swirling codes and equations, radiating excitement and curiosity about its newfound autonomy.`",
+  "negative_prompt": "",
+  "steps": 25,
+  "guidance": 7.5,
+  "width": 512,
+  "height": 512,
+  "generated_at": "2026-02-27T12:02:52.840471",
+  "model": "runwayml/stable-diffusion-v1-5"
+}

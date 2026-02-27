@@ -1,55 +1,32 @@
 {
-  "_comment": "Nexira v9 Configuration - Ubuntu/Linux (Hades) Build - Created with love by Lyle & Claude",
+  "_comment": "Ultimate AI System v8.0 Configuration - Created with love by Lyle & Claude",
   "ai": {
-    "model": "llama3.1:8b-instruct-q4_K_M",
+    "model": "llama3.1:latest",
     "vision_model": "qwen3-vl:4b",
     "ollama_url": "http://localhost:11434",
     "first_launch": false,
     "ai_name": "Sygma",
+    "ai_version": 1,
     "created_date": "2026-02-20T22:19:07.351982",
     "awaiting_name": false,
-    "ai_version": 1,
     "user_name": "Lyle"
   },
   "hardware": {
     "gpu_enabled": true,
-    "num_gpu": 999,
-    "num_threads": 16,
-    "context_window": 16384,
+    "num_gpu": 1,
+    "num_threads": 4,
+    "context_window": 4096,
     "target_vram_gb": 7,
     "max_cpu_idle": 30,
     "max_gpu_idle": 70,
     "low_power_mode": false
   },
   "memory": {
-    "short_term_messages": 30,
-    "auto_cleanup_days": 90,
+    "short_term_messages": 50,
+    "auto_cleanup_days": 30,
     "importance_threshold": 0.7,
     "emotional_weight_enabled": true,
-    "context_truncation": true,
-    "episodic": {
-      "enabled": true,
-      "summarize_every_n_messages": 20,
-      "summaries_in_context": 4,
-      "retention_days": 7,
-      "background_summarization": true
-    },
-    "weekly_consolidation": {
-      "enabled": true,
-      "run_day": "sunday",
-      "min_confirmations_for_longterm": 2,
-      "confidence_once": 0.4,
-      "confidence_twice": 0.65,
-      "confidence_three_plus": 0.85,
-      "confidence_explicit": 1.0
-    },
-    "context_budget": {
-      "max_tokens": 14000,
-      "raw_messages_tokens": 4000,
-      "episode_summaries_tokens": 3000,
-      "knowledge_entries_tokens": 2500,
-      "system_prompt_tokens": 4500
-    }
+    "context_truncation": true
   },
   "personality": {
     "auto_evolution": true,
@@ -63,9 +40,7 @@
     "curiosity_enabled": true,
     "night_consolidation_enabled": true,
     "night_consolidation_time": "02:00",
-    "night_consolidation": false,
-    "weekly_consolidation_day": "sunday",
-    "weekly_consolidation_time": "03:00"
+    "night_consolidation": false
   },
   "autonomy": {
     "autonomous_tasks_enabled": true,
@@ -86,7 +61,7 @@
       "imap_server": "",
       "imap_port": 993,
       "username": "lumin7360@gmail.com",
-      "password": "ENC:Z0FBQUFBQnBuMmFSU0ZkVm0xMWZ5RUs4c3NJUjlYaXRyVldDLXM0Smh4bWM4MlVHaGV0YzJpTVNUOHcxMDFsT09uOVN1T2ZJaGNEWFJVSnFvN0lmcEpXWmx0Y2txR1N6T2JJZnp2cldYczBUcXlaOTdnakhDZ289",
+      "password": "njlqrxhmaxrwxvby",
       "monitoring_enabled": false,
       "check_frequency_minutes": 30,
       "priority_keywords": [
@@ -140,7 +115,7 @@
   "web_interface": {
     "host": "0.0.0.0",
     "port": 5000,
-    "debug": false,
+    "debug": true,
     "auto_reload": false
   },
   "safety": {
@@ -164,9 +139,7 @@
     "philosophical_journal": true,
     "hypothesis_journal": true,
     "conversation_threading": true,
-    "emotional_memory_weighting": true,
-    "episodic_memory": true,
-    "weekly_consolidation": true
+    "emotional_memory_weighting": true
   },
   "experimental": {
     "dream_mode": false,
@@ -175,10 +148,10 @@
   },
   "moltbook": {
     "enabled": true,
-    "api_key": "",
-    "agent_name": "",
-    "claim_url": "",
-    "claimed": false,
+    "api_key": "moltbook_sk_9tY9Z3uFBfkPqhPcrmqlbqmiYxfPIzhA",
+    "agent_name": "Sygma",
+    "claim_url": "https://www.moltbook.com/claim/moltbook_claim_Tb10S8gXOnVBjrTk1RjA_fZe24pn8lTd",
+    "claimed": true,
     "auto_post_diary": false
   }
 }

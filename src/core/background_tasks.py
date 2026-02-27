@@ -188,8 +188,16 @@ class BackgroundTaskScheduler:
             .get('night_consolidation_time', '02:00')
             .split(':')[0]
         )
+        weekly_hour = int(
+            self.config.get('intelligence', {})
+            .get('weekly_consolidation_time', '03:00')
+            .split(':')[0]
+        )
+        weekly_day = self.config.get('intelligence', {}).get(
+            'weekly_consolidation_day', 'sunday').lower()
 
         print(f"📅 Scheduler: night consolidation set for {consolidation_hour:02d}:00")
+        print(f"📅 Scheduler: weekly consolidation set for {weekly_day.title()} {weekly_hour:02d}:00")
 
         last_minute_checked = -1
 
@@ -209,6 +217,21 @@ class BackgroundTaskScheduler:
                     ai_name = self._get_ai_name()
                     print(f"\n⏰ Scheduled: Night consolidation ({now.strftime('%H:%M')})")
                     self.night_consolidation.run(ai_name)
+
+                # Weekly consolidation (Sunday 3AM or configured day/time)
+                day_name = now.strftime("%A").lower()
+                if (day_name == weekly_day
+                        and now.hour == weekly_hour
+                        and now.minute == 0):
+                    ai_name = self._get_ai_name()
+                    print(f"\n  Scheduled: Weekly consolidation ({now.strftime('%A %H:%M')})")
+                    try:
+                        from core.episodic_memory import EpisodicMemory
+                        episodic = EpisodicMemory(self.db, self.config, self.ollama_model)
+                        result = episodic.run_weekly_consolidation(ai_name=ai_name)
+                        print(f"   Weekly: {result.get('knowledge_items_added',0)} items committed")
+                    except Exception as wk_err:
+                        print(f"   Weekly consolidation error: {wk_err}")
 
                 # Every hour on the quarter: refresh all goal tracking
                 if now.minute == 15:

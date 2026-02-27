@@ -66,7 +66,7 @@ class CuriosityEngine:
         # Try LLM-based extraction first
         if ollama_model:
             try:
-                import ollama
+                from core.ai_engine import get_ollama_client
                 import re
 
                 prompt = f"""Review this conversation exchange and identify any specific intellectual topics, concepts, or subjects that would be worth researching.
@@ -93,7 +93,8 @@ Return ONLY a JSON array of short topic strings (3-8 words each). Example:
 
 Return [] if nothing qualifies."""
 
-                response_obj = ollama.generate(model=ollama_model, prompt=prompt,
+                client = get_ollama_client(self.config)
+                response_obj = client.generate(model=ollama_model, prompt=prompt,
                                                options=get_ollama_options(self.config))
                 raw = re.sub(r'<think>.*?</think>', '', response_obj['response'],
                              flags=re.DOTALL).strip()
@@ -226,3 +227,120 @@ Return [] if nothing qualifies."""
             }
         except Exception:
             return {'pending': 0, 'completed': 0, 'total': 0}
+
+    def scan_hub_replica(self, replica_path: str):
+        """
+        Scan a newly received hub_replica.db for topics worth researching.
+
+        Called automatically when Nexira receives a replica push from the Hub.
+        Extracts topics from hub conversations and decisions, adds them to
+        the curiosity queue tagged as source='hub_collaboration'.
+
+        This is how the AI becomes naturally aware of and curious about
+        content from hub sessions — through the same curiosity pipeline
+        it uses for everything else.
+        """
+        import sqlite3 as _sqlite3
+        import os
+
+        if not os.path.exists(replica_path):
+            print(f"[CURIOSITY] Hub replica not found at {replica_path}")
+            return
+
+        try:
+            conn = _sqlite3.connect(replica_path)
+            conn.execute("PRAGMA query_only = ON")  # enforce read-only
+            c = conn.cursor()
+
+            topics_added = 0
+
+            # Scan recent messages for researchable content
+            try:
+                c.execute("""
+                    SELECT content FROM messages
+                    WHERE sender != 'system'
+                    ORDER BY timestamp DESC
+                    LIMIT 100
+                """)
+                messages = [row[0] for row in c.fetchall()]
+                for msg in messages:
+                    extracted = self._extract_topics_from_text(msg)
+                    for topic in extracted:
+                        if self._add_to_queue(topic, source='hub_collaboration', priority=3):
+                            topics_added += 1
+            except Exception as e:
+                print(f"[CURIOSITY] Replica message scan error: {e}")
+
+            # Scan decisions for follow-up topics
+            try:
+                c.execute("""
+                    SELECT summary, open_questions, next_steps FROM decisions
+                    WHERE status = 'active'
+                    ORDER BY timestamp DESC
+                    LIMIT 20
+                """)
+                decisions = c.fetchall()
+                for decision in decisions:
+                    for field in decision:
+                        if field:
+                            extracted = self._extract_topics_from_text(field)
+                            for topic in extracted:
+                                if self._add_to_queue(topic, source='hub_collaboration', priority=4):
+                                    topics_added += 1
+            except Exception:
+                pass  # decisions table may not exist in older replicas
+
+            conn.close()
+            print(f"[CURIOSITY] Hub replica scan complete — {topics_added} topics added")
+
+        except Exception as e:
+            print(f"[CURIOSITY] Hub replica scan failed: {e}")
+
+    def _extract_topics_from_text(self, text: str) -> list:
+        """Extract potentially researchable topics from text."""
+        if not text or len(text) < 20:
+            return []
+        stop_words = {
+            'the', 'is', 'at', 'which', 'on', 'a', 'an', 'and', 'or', 'but',
+            'in', 'with', 'to', 'for', 'that', 'this', 'was', 'are', 'be',
+            'have', 'has', 'had', 'from', 'they', 'you', 'we', 'it', 'not',
+            'what', 'when', 'how', 'why', 'who', 'will', 'can', 'would', 'could'
+        }
+        words = text.lower().split()
+        topics = [w.strip('.,!?;:') for w in words
+                  if w not in stop_words and len(w) > 4 and w.isalpha()]
+        # Return unique topics, limit to avoid flooding the queue
+        seen = set()
+        result = []
+        for t in topics:
+            if t not in seen:
+                seen.add(t)
+                result.append(t)
+            if len(result) >= 3:
+                break
+        return result
+
+    def _add_to_queue(self, topic: str, source: str = 'curiosity',
+                      priority: int = 5) -> bool:
+        """
+        Add a topic to the curiosity queue if not already present.
+        Returns True if added, False if duplicate.
+        """
+        try:
+            cursor = self.db.cursor()
+            # Check if already in queue (pending)
+            cursor.execute("""
+                SELECT id FROM curiosity_queue
+                WHERE LOWER(topic) = LOWER(?) AND status = 'pending'
+            """, (topic,))
+            if cursor.fetchone():
+                return False
+            cursor.execute("""
+                INSERT INTO curiosity_queue
+                (topic, source, priority, status, added_date)
+                VALUES (?, ?, ?, 'pending', ?)
+            """, (topic, source, priority, datetime.now().isoformat()))
+            self.db.commit()
+            return True
+        except Exception:
+            return False

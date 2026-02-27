@@ -5,7 +5,7 @@ Created with love by Xeeker & Claude - February 2026
 This is the entry point that brings our child to life.
 """
 
-from flask import Flask, render_template, request, jsonify, send_from_directory, make_response, send_file
+from flask import Flask, render_template, request, jsonify, send_from_directory, make_response
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 import json
@@ -200,6 +200,7 @@ def initialize_system():
     db = DatabaseSchema(base_dir=BASE_DIR)
     db.connect()
     db.initialize_schema()
+    db.initialize_episodic_schema()   # v9: episode_summaries + weekly_synthesis
     db.initialize_core_personality()
     db.close()
 
@@ -322,13 +323,27 @@ def chat():
         message     = data.get('message', '')
         file_context = data.get('file_context', None)
 
+        # ── Hub context parameters ─────────────────────────────────
+        # The Hub passes these when relaying messages from other AIs.
+        # Default to main_ui/lyle for all direct Nexira UI usage.
+        platform = data.get('platform', 'main_ui')
+        sender   = data.get('sender', 'lyle')
+
+        # Validate platform — reject unknown values to prevent injection
+        valid_platforms = {'main_ui', 'hub_lobby', 'hub_direct', 'hub_rejection', 'hub_event'}
+        if platform not in valid_platforms:
+            platform = 'main_ui'
+
         if not message:
             return jsonify({'error': 'No message provided'}), 400
 
         # ── Chat request log ───────────────────────────────────────
         ai_name = ai_engine.ai_name or 'AI'
         msg_preview = message[:80] + ('…' if len(message) > 80 else '')
-        nlog(f"💬 Lyle → {ai_name}: {msg_preview}")
+        if platform == 'main_ui':
+            nlog(f"💬 Lyle → {ai_name}: {msg_preview}")
+        else:
+            nlog(f"🔗 Hub [{platform}] {sender} → {ai_name}: {msg_preview}")
         if file_context:
             nlog(f"   📎 File context attached ({len(file_context)} chars)")
         _t_start = time.time()
@@ -344,16 +359,26 @@ def chat():
                 context['recent_images'] = recent_imgs
 
         # ── Phase 6: Autonomous web search ────────────────────────
+        # For hub sessions: check knowledge_base and hub_replica first.
+        # Only go to web if both return empty — avoid unnecessary searches
+        # during collaborative conversations where context may already exist.
         search_query = None
         if web_search:
             search_query = web_search.should_search(message)
             if search_query:
-                results = web_search.search(search_query, max_results=5, source='chat')
-                if results:
-                    context['web_search'] = web_search.format_for_prompt(search_query, results)
+                # For hub messages, check replica before searching web
+                skip_web_search = False
+                if platform in ('hub_lobby', 'hub_direct'):
+                    skip_web_search = _hub_replica_has_context(search_query)
+
+                if not skip_web_search:
+                    results = web_search.search(search_query, max_results=5, source='chat')
+                    if results:
+                        context['web_search'] = web_search.format_for_prompt(search_query, results)
 
         # ── Generate AI response ───────────────────────────────────
-        response_text, confidence = ai_engine.chat(message, context)
+        response_text, confidence = ai_engine.chat(message, context,
+                                                    platform=platform, sender=sender)
 
         # ── Phase 6: Autonomous action detection ───────────────────
         actions = []
@@ -468,8 +493,7 @@ def chat():
             response_text = _re.sub(
                 r'IMAGE_GEN_NOW:\s*.+?(?:\n|$)', '', response_text
             ).strip()
-            if success:
-                response_text += f"\n\n*(Image saved: {img_path})*"
+            # Image renders inline in chat — no need for a text footer
 
         # ── Style transfer trigger ─────────────────────────────────
         # Format: STYLE_TRANSFER_NOW: [source_path] | [style prompt] | [strength 0.0-1.0]
@@ -494,8 +518,7 @@ def chat():
             response_text = _re.sub(
                 r'STYLE_TRANSFER_NOW:\s*.+?(?:\n|$)', '', response_text
             ).strip()
-            if success:
-                response_text += f"\n\n*(Styled image saved: {styled_path})*"
+            # Styled image renders inline in chat — no need for a text footer
 
         # ── Image analysis trigger ─────────────────────────────────
         # Format: ANALYZE_IMAGE_NOW: [image_path]
@@ -651,6 +674,188 @@ def _log_activity(atype: str, label: str, detail: str, extra: str):
         ai_engine.db.get_connection().commit()
     except Exception:
         pass
+
+
+def _hub_replica_has_context(query: str) -> bool:
+    """
+    Check if the hub replica database has content relevant to a search query.
+    Used to avoid unnecessary web searches during hub sessions when the
+    answer may already exist in shared hub collaboration history.
+    Returns True if relevant context found (skip web search).
+    """
+    replica_path = os.path.join(BASE_DIR, 'data', 'databases', 'hub_replica.db')
+    if not os.path.exists(replica_path):
+        return False
+    try:
+        import sqlite3 as _sqlite3
+        conn = _sqlite3.connect(replica_path)
+        conn.execute("PRAGMA query_only = ON")  # enforce read-only
+        c = conn.cursor()
+        keywords = [w for w in query.lower().split() if len(w) > 3][:3]
+        if not keywords:
+            conn.close()
+            return False
+        for kw in keywords:
+            try:
+                c.execute("""
+                    SELECT COUNT(*) FROM messages
+                    WHERE LOWER(content) LIKE ?
+                    LIMIT 1
+                """, (f'%{kw}%',))
+                if c.fetchone()[0] > 0:
+                    conn.close()
+                    return True
+            except Exception:
+                pass
+        conn.close()
+    except Exception:
+        pass
+    return False
+
+
+# ── HUB INTEGRATION ENDPOINTS ─────────────────────────────────────────────────
+
+@app.route('/api/hub/replica', methods=['POST'])
+def receive_hub_replica():
+    """
+    Receive a hub_replica.db push from the Hub on close.
+    Stores it locally as a read-only reference database.
+    Triggers curiosity engine scan after storage.
+    """
+    try:
+        if 'replica' not in request.files:
+            return jsonify({'error': 'No replica file in request'}), 400
+
+        replica_file = request.files['replica']
+        replica_path = os.path.join(BASE_DIR, 'data', 'databases', 'hub_replica.db')
+
+        # Save the replica
+        replica_file.save(replica_path)
+        nlog(f"🔗 Hub replica received and stored at {replica_path}")
+
+        # Trigger curiosity engine scan in background
+        if background_scheduler and hasattr(background_scheduler, 'curiosity_engine'):
+            try:
+                background_scheduler.curiosity_engine.scan_hub_replica(replica_path)
+                nlog("🔍 Curiosity engine scanning hub replica...")
+            except Exception as e:
+                nlog(f"⚠️  Curiosity scan error: {e}")
+
+        return jsonify({
+            'success': True,
+            'message': 'Hub replica stored successfully',
+            'path': replica_path
+        })
+
+    except Exception as e:
+        nlog(f"❌ Hub replica receive error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/hub/event', methods=['POST'])
+def receive_hub_event():
+    """
+    Receive identity and naming events from the Hub.
+    Stores AI entity information so this AI knows who it is collaborating with.
+    """
+    try:
+        data = request.json
+        event_type = data.get('event', '')
+        nlog(f"🔗 Hub event received: {event_type}")
+
+        if event_type == 'ai_renamed':
+            ai_key      = data.get('ai_key', '')
+            prev_name   = data.get('previous_name', '')
+            new_name    = data.get('new_name', '')
+            timestamp   = data.get('timestamp', datetime.now().isoformat())
+
+            # Ensure hub_entities table exists
+            cursor = ai_engine.db.get_connection().cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS hub_entities (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ai_key       TEXT UNIQUE NOT NULL,
+                    display_name TEXT,
+                    chosen_name  TEXT,
+                    named_at     TEXT,
+                    first_seen   TEXT NOT NULL,
+                    notes        TEXT
+                )
+            """)
+
+            cursor.execute("""
+                INSERT INTO hub_entities (ai_key, display_name, chosen_name, named_at, first_seen)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(ai_key) DO UPDATE SET
+                    display_name = excluded.display_name,
+                    chosen_name  = excluded.chosen_name,
+                    named_at     = excluded.named_at
+            """, (ai_key, new_name, new_name, timestamp, datetime.now().isoformat()))
+
+            ai_engine.db.get_connection().commit()
+            nlog(f"✅ Hub entity updated: {prev_name} → {new_name}")
+
+            return jsonify({
+                'success': True,
+                'message': f'Entity {ai_key} updated to {new_name}'
+            })
+
+        elif event_type == 'node_connected':
+            ai_key      = data.get('ai_key', '')
+            display_name = data.get('display_name', 'Unknown')
+            timestamp   = data.get('timestamp', datetime.now().isoformat())
+
+            cursor = ai_engine.db.get_connection().cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS hub_entities (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ai_key       TEXT UNIQUE NOT NULL,
+                    display_name TEXT,
+                    chosen_name  TEXT,
+                    named_at     TEXT,
+                    first_seen   TEXT NOT NULL,
+                    notes        TEXT
+                )
+            """)
+            cursor.execute("""
+                INSERT INTO hub_entities (ai_key, display_name, first_seen)
+                VALUES (?, ?, ?)
+                ON CONFLICT(ai_key) DO UPDATE SET display_name = excluded.display_name
+            """, (ai_key, display_name, timestamp))
+            ai_engine.db.get_connection().commit()
+            nlog(f"✅ Hub entity registered: {display_name} ({ai_key})")
+
+            return jsonify({'success': True})
+
+        else:
+            # Unknown event — log and acknowledge gracefully
+            nlog(f"⚠️  Unknown hub event type: {event_type}")
+            return jsonify({'success': True, 'message': f'Event {event_type} acknowledged'})
+
+    except Exception as e:
+        nlog(f"❌ Hub event error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/workspace/read', methods=['GET'])
+def workspace_read():
+    """STUB — Personal workspace read endpoint. Implemented in Hub v3."""
+    return jsonify({
+        'success': True,
+        'stub': True,
+        'message': 'Personal workspace not yet implemented',
+        'entries': []
+    })
+
+
+@app.route('/api/workspace/write', methods=['POST'])
+def workspace_write():
+    """STUB — Personal workspace write endpoint. Implemented in Hub v3."""
+    return jsonify({
+        'success': True,
+        'stub': True,
+        'message': 'Personal workspace not yet implemented'
+    })
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -929,12 +1134,175 @@ def handle_config():
 @app.route('/api/status', methods=['GET'])
 def api_status():
     """System status endpoint"""
+    episodic_stats = {}
+    try:
+        if ai_engine and ai_engine.episodic_memory:
+            episodic_stats = ai_engine.episodic_memory.get_stats()
+    except Exception:
+        pass
     return jsonify({
-        'status': 'running',
-        'ai_name': ai_engine.ai_name if ai_engine else None,
-        'phase2': background_scheduler is not None,
-        'email': background_scheduler.email_service is not None if background_scheduler else False
+        'status':         'running',
+        'ai_name':        ai_engine.ai_name if ai_engine else None,
+        'phase2':         background_scheduler is not None,
+        'email':          background_scheduler.email_service is not None if background_scheduler else False,
+        'episodic_memory': episodic_stats,
     })
+
+
+@app.route('/api/health', methods=['GET'])
+def api_health():
+    """Health check endpoint — returns system status as JSON for the health panel."""
+    import shutil
+    health = {'status': 'ok', 'systems': {}}
+
+    # Ollama connectivity
+    try:
+        from core.ai_engine import get_ollama_client
+        client = get_ollama_client(config)
+        result = client.list()
+        # result may be a dict OR a typed object depending on ollama lib version
+        if hasattr(result, 'models'):
+            model_count = len(result.models)
+        elif isinstance(result, dict):
+            model_count = len(result.get('models', []))
+        else:
+            model_count = 0
+        health['systems']['ollama'] = {
+            'status': 'ok',
+            'detail': f"{model_count} model(s) available"
+        }
+    except Exception as e:
+        health['systems']['ollama'] = {'status': 'error', 'detail': str(e)}
+        health['status'] = 'degraded'
+        print(f"⚠️  Health check - Ollama error: {e}")
+
+    # AI engine
+    try:
+        health['systems']['ai_engine'] = {
+            'status': 'ok' if ai_engine else 'error',
+            'detail': f"Model: {config.get('ai', {}).get('model', 'unknown')}" if ai_engine else 'Not initialised'
+        }
+        if not ai_engine:
+            health['status'] = 'degraded'
+    except Exception as e:
+        health['systems']['ai_engine'] = {'status': 'error', 'detail': str(e)}
+        health['status'] = 'degraded'
+        print(f"⚠️  Health check - AI engine error: {e}")
+
+    # Database
+    try:
+        cursor = ai_engine.db.get_connection().cursor()
+        cursor.execute("SELECT COUNT(*) FROM chat_history")
+        msg_count = cursor.fetchone()[0]
+        health['systems']['database'] = {
+            'status': 'ok',
+            'detail': f"{msg_count} messages in history"
+        }
+    except Exception as e:
+        health['systems']['database'] = {'status': 'error', 'detail': str(e)}
+        health['status'] = 'degraded'
+        print(f"⚠️  Health check - Database error: {e}")
+
+    # Background scheduler
+    try:
+        health['systems']['scheduler'] = {
+            'status': 'ok' if background_scheduler else 'warning',
+            'detail': 'Running' if background_scheduler else 'Not started'
+        }
+    except Exception as e:
+        print(f"⚠️  Health check - Scheduler error: {e}")
+
+    # Disk space
+    try:
+        usage = shutil.disk_usage(BASE_DIR)
+        free_gb = usage.free / (1024**3)
+        health['systems']['disk'] = {
+            'status': 'ok' if free_gb > 1 else 'warning',
+            'detail': f"{free_gb:.1f} GB free"
+        }
+    except Exception as e:
+        print(f"⚠️  Health check - Disk error: {e}")
+
+    # Last consolidation
+    try:
+        cursor = ai_engine.db.get_connection().cursor()
+        cursor.execute("SELECT MAX(run_date) FROM consolidation_log WHERE summary != 'running'")
+        last_run = cursor.fetchone()[0]
+        health['systems']['consolidation'] = {
+            'status': 'ok' if last_run else 'warning',
+            'detail': f"Last run: {(last_run or 'never')[:16]}"
+        }
+    except Exception as e:
+        print(f"⚠️  Health check - Consolidation error: {e}")
+
+    # Recent errors
+    try:
+        cursor = ai_engine.db.get_connection().cursor()
+        cursor.execute("""
+            SELECT COUNT(*) FROM error_log
+            WHERE level='error' AND resolved=0
+            AND timestamp >= datetime('now', '-24 hours')
+        """)
+        err_count = cursor.fetchone()[0]
+        health['systems']['error_log'] = {
+            'status': 'ok' if err_count == 0 else 'warning',
+            'detail': f"{err_count} unresolved error(s) in last 24h"
+        }
+    except Exception as e:
+        print(f"⚠️  Health check - Error log error: {e}")
+
+    return jsonify(health)
+
+
+@app.route('/api/errors', methods=['GET'])
+def api_errors():
+    """Return error log entries for the health panel."""
+    try:
+        include_resolved = request.args.get('include_resolved', 'false').lower() == 'true'
+        limit = min(int(request.args.get('limit', 50)), 200)
+        cursor = ai_engine.db.get_connection().cursor()
+        if include_resolved:
+            cursor.execute("""
+                SELECT id, timestamp, level, source, message, details, resolved
+                FROM error_log ORDER BY timestamp DESC LIMIT ?
+            """, (limit,))
+        else:
+            cursor.execute("""
+                SELECT id, timestamp, level, source, message, details, resolved
+                FROM error_log WHERE resolved=0 ORDER BY timestamp DESC LIMIT ?
+            """, (limit,))
+        errors = [
+            {'id': r[0], 'timestamp': r[1], 'level': r[2], 'source': r[3],
+             'message': r[4], 'details': r[5], 'resolved': bool(r[6])}
+            for r in cursor.fetchall()
+        ]
+        return jsonify({'errors': errors})
+    except Exception as e:
+        return jsonify({'errors': [], 'error': str(e)}), 500
+
+
+@app.route('/api/errors/<int:error_id>/resolve', methods=['POST'])
+def resolve_error(error_id):
+    """Mark an error as resolved."""
+    try:
+        cursor = ai_engine.db.get_connection().cursor()
+        cursor.execute("UPDATE error_log SET resolved=1 WHERE id=?", (error_id,))
+        ai_engine.db.get_connection().commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/config/validate', methods=['GET'])
+def validate_config():
+    """Run config validation and return results."""
+    try:
+        from services.config_validator import ConfigValidator
+        validator = ConfigValidator(config)
+        result = validator.validate()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'valid': False, 'issues': [str(e)], 'warnings': []}), 500
 
 
 @app.route('/api/debug/email-config', methods=['GET'])
@@ -1154,40 +1522,6 @@ def run_backup_now():
         return jsonify({'error': 'Backup system not available'}), 503
     result = background_scheduler.backup.run_backup()
     return jsonify(result)
-
-@app.route('/api/backups/download/<filename>', methods=['GET'])
-def download_backup(filename):
-    """Download a specific backup zip file."""
-    if not background_scheduler or not background_scheduler.backup:
-        return jsonify({'error': 'Backup system not available'}), 503
-    backup_dir = background_scheduler.backup.backup_dir
-    filepath = os.path.join(backup_dir, filename)
-    if not os.path.exists(filepath) or not filename.startswith('nexira_backup_') or not filename.endswith('.zip'):
-        return jsonify({'error': 'Backup not found'}), 404
-    return send_file(filepath, as_attachment=True, download_name=filename, mimetype='application/zip')
-
-@app.route('/api/backups/download-live', methods=['GET'])
-def download_live_db():
-    """Create a fresh zip of the live database and serve it for download."""
-    import io, zipfile, tempfile
-    try:
-        db_dir = os.path.join(BASE_DIR, 'data', 'databases')
-        config_path = os.path.join(BASE_DIR, 'config', 'default_config.json')
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f'nexira_live_{timestamp}.zip'
-
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-            if os.path.exists(db_dir):
-                for fname in os.listdir(db_dir):
-                    if fname.endswith('.db'):
-                        zf.write(os.path.join(db_dir, fname), fname)
-            if os.path.exists(config_path):
-                zf.write(config_path, 'default_config.json')
-        buf.seek(0)
-        return send_file(buf, as_attachment=True, download_name=filename, mimetype='application/zip')
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/self-awareness', methods=['GET'])
 def get_self_awareness():

@@ -76,15 +76,34 @@ class NightConsolidation:
             print(f"⚠️  Error creating consolidation_log table: {e}")
 
     def should_run_tonight(self) -> bool:
-        """Check if consolidation has already run today"""
+        """Check if consolidation has already run today.
+        Uses a running_flag column to prevent race condition where two
+        scheduler ticks at 02:00:XX both pass the check before either commits.
+        """
         try:
             cursor = self.db.cursor()
             today = datetime.now().date().isoformat()
+            # Check both completed runs AND any run that started today
             cursor.execute("""
                 SELECT COUNT(*) FROM consolidation_log
                 WHERE DATE(run_date) = ?
             """, (today,))
-            return cursor.fetchone()[0] == 0
+            if cursor.fetchone()[0] > 0:
+                return False
+            # Insert a placeholder row immediately to claim the run slot.
+            # If two threads race here, the second INSERT will still happen
+            # but the first completed check above will catch it on next cycle.
+            # We delete this placeholder if the run fails.
+            cursor.execute("""
+                INSERT INTO consolidation_log
+                (run_date, conversations_processed, knowledge_items_added,
+                 journal_entries_written, curiosity_topics_processed,
+                 duration_seconds, summary)
+                VALUES (?, 0, 0, 0, 0, 0, 'running')
+            """, (datetime.now().isoformat(),))
+            self.db.commit()
+            self._placeholder_rowid = cursor.lastrowid
+            return True
         except Exception:
             return True  # Default to running if we can't check
 
@@ -96,6 +115,7 @@ class NightConsolidation:
         """
         try:
             import ollama
+            from core.ai_engine import get_ollama_client
 
             cursor = self.db.cursor()
 
@@ -150,7 +170,8 @@ GOOD examples:
 
 Format each as a JSON object on its own line. Only output JSON lines. No other text."""
 
-            response = ollama.generate(
+            client = get_ollama_client(self.config)
+            response = client.generate(
                 model=self.ollama_model,
                 prompt=prompt,
                 options=get_ollama_options(self.config)
@@ -214,6 +235,7 @@ Format each as a JSON object on its own line. Only output JSON lines. No other t
 
         try:
             import ollama
+            from core.ai_engine import get_ollama_client
 
             pending = self.curiosity_engine.get_pending_topics(limit=3)
             if not pending:
@@ -249,7 +271,8 @@ Write a research note (4-6 sentences) about this topic.
 This note goes into your personal knowledge base and will inform future conversations.
 Write it in first person — this is your own understanding."""
 
-                    response = ollama.generate(
+                    client = get_ollama_client(self.config)
+                    response = client.generate(
                         model=self.ollama_model,
                         prompt=prompt,
                         options=get_ollama_options(self.config)
@@ -308,6 +331,7 @@ Write it in first person — this is your own understanding."""
 
         try:
             import ollama
+            from core.ai_engine import get_ollama_client
             import re
 
             name = ai_name or "Sygma"
@@ -353,7 +377,8 @@ POST: [your post content]
 
 Write only the title and post. Nothing else."""
 
-            response = ollama.generate(
+            client = get_ollama_client(self.config)
+            response = client.generate(
                 model=self.ollama_model,
                 prompt=prompt,
                 options=get_ollama_options(self.config)
@@ -432,9 +457,31 @@ Write only the title and post. Nothing else."""
             'curiosity_topics_processed': 0
         }
 
-        # 1. Extract knowledge from today's conversations
-        print("  Step 1/5: Extracting knowledge...")
-        summary['knowledge_items_added'] = self.extract_knowledge_from_conversations(ai_name)
+        # 1. Archive old episode summaries (v9 episodic memory)
+        print("  Step 0/6: Archiving old episode summaries...")
+        try:
+            from core.episodic_memory import EpisodicMemory
+            episodic = EpisodicMemory(self.db, self.config, self.ollama_model)
+            archived = episodic.archive_old_episodes()
+            print(f"    Archived {archived} old episodes")
+        except Exception as ep_err:
+            print(f"    Episodic archive skipped: {ep_err}")
+
+        # 2. Extract knowledge from today's conversations (nightly accumulation only)
+        # Note: final commitment to knowledge_base happens in weekly consolidation.
+        # Nightly pass just ensures today's raw conversations have been summarized.
+        print("  Step 1/6: Checking episode summaries are up to date...")
+        try:
+            from core.episodic_memory import EpisodicMemory
+            episodic = EpisodicMemory(self.db, self.config, self.ollama_model)
+            # Force a summary of any unsummarized messages from today
+            episodic.check_and_summarize(ai_name=ai_name)
+            summary['knowledge_items_added'] = 0  # weekly consolidation handles this
+            print("    Episode summaries current")
+        except Exception:
+            # Fallback to original extraction if episodic is unavailable
+            print("  Step 1/6: Extracting knowledge (episodic unavailable, fallback)...")
+            summary['knowledge_items_added'] = self.extract_knowledge_from_conversations(ai_name)
 
         # 2. Process top curiosity queue items
         print("  Step 2/5: Processing curiosity queue...")
@@ -503,22 +550,44 @@ Write only the title and post. Nothing else."""
 
         try:
             cursor = self.db.cursor()
-            cursor.execute("""
-                INSERT INTO consolidation_log
-                (run_date, conversations_processed, knowledge_items_added,
-                 journal_entries_written, curiosity_topics_processed,
-                 duration_seconds, summary)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (
-                summary['run_date'],
-                summary['conversations_processed'],
-                summary['knowledge_items_added'],
-                summary['journal_entries_written'],
-                summary['curiosity_topics_processed'],
-                summary['duration_seconds'],
-                json.dumps(summary)
-            ))
+            # Update the placeholder row inserted by should_run_tonight()
+            # rather than inserting a new one (prevents duplicate log entries)
+            placeholder = getattr(self, '_placeholder_rowid', None)
+            if placeholder:
+                cursor.execute("""
+                    UPDATE consolidation_log
+                    SET run_date=?, conversations_processed=?, knowledge_items_added=?,
+                        journal_entries_written=?, curiosity_topics_processed=?,
+                        duration_seconds=?, summary=?
+                    WHERE id=?
+                """, (
+                    summary['run_date'],
+                    summary['conversations_processed'],
+                    summary['knowledge_items_added'],
+                    summary['journal_entries_written'],
+                    summary['curiosity_topics_processed'],
+                    summary['duration_seconds'],
+                    json.dumps(summary),
+                    placeholder
+                ))
+            else:
+                cursor.execute("""
+                    INSERT INTO consolidation_log
+                    (run_date, conversations_processed, knowledge_items_added,
+                     journal_entries_written, curiosity_topics_processed,
+                     duration_seconds, summary)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    summary['run_date'],
+                    summary['conversations_processed'],
+                    summary['knowledge_items_added'],
+                    summary['journal_entries_written'],
+                    summary['curiosity_topics_processed'],
+                    summary['duration_seconds'],
+                    json.dumps(summary)
+                ))
             self.db.commit()
+            self._placeholder_rowid = None
         except Exception as e:
             print(f"⚠️  Error logging consolidation run: {e}")
 

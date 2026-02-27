@@ -290,11 +290,11 @@ class DatabaseSchema:
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS mistakes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                wrong_answer TEXT NOT NULL,
-                correct_answer TEXT NOT NULL,
+                timestamp TEXT,
                 topic TEXT,
-                mistake_date TEXT,
-                learned_from BOOLEAN DEFAULT 0
+                correction TEXT,
+                behavioral_rule TEXT,
+                applied_count INTEGER DEFAULT 0
             )
         """)
 
@@ -489,10 +489,55 @@ class DatabaseSchema:
             self.conn = None
 
 
+
+    def initialize_episodic_schema(self):
+        """Episodic Memory System v9 — adds episode_summaries and weekly_synthesis tables."""
+        cursor = self.conn.cursor()
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS episode_summaries (
+                id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at           TEXT NOT NULL,
+                week_number          INTEGER,
+                message_range_start  INTEGER,
+                message_range_end    INTEGER,
+                summary              TEXT NOT NULL,
+                topics               TEXT,
+                importance           REAL DEFAULT 0.5,
+                mention_count        INTEGER DEFAULT 1,
+                committed            INTEGER DEFAULT 0,
+                archived             INTEGER DEFAULT 0
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS weekly_synthesis (
+                id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                week_start            TEXT NOT NULL,
+                week_end              TEXT NOT NULL,
+                synthesis             TEXT NOT NULL,
+                confirmed_topics      TEXT,
+                tentative_topics      TEXT,
+                corrections           TEXT,
+                knowledge_items_added INTEGER DEFAULT 0,
+                created_at            TEXT NOT NULL
+            )
+        """)
+
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_episodes_created ON episode_summaries(created_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_episodes_committed ON episode_summaries(committed)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_episodes_week ON episode_summaries(week_number)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_weekly_start ON weekly_synthesis(week_start)")
+
+        self.conn.commit()
+        print("✓ Episodic memory schema initialized")
+
+
 if __name__ == "__main__":
     db = DatabaseSchema()
     db.connect()
     db.initialize_schema()
+    db.initialize_episodic_schema()
     db.initialize_core_personality()
     db.close()
     print("✓ Database ready")

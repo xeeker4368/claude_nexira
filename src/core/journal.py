@@ -47,13 +47,15 @@ class JournalSystem:
         self.config = config
         self.ollama_model = ollama_model
 
-        # Ensure journal table exists (extends base schema)
+        # Ensure journal table exists and is up to date
         self._ensure_table()
 
     def _ensure_table(self):
-        """Create journal table if it doesn't exist yet"""
+        """Create journal table if it doesn't exist, and migrate schema if needed."""
         try:
             cursor = self.db.cursor()
+
+            # Create table with full schema (new installs)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS journal_entries (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -68,8 +70,32 @@ class JournalSystem:
                 )
             """)
             self.db.commit()
+
+            # Migration: add created_date column if it was missing on existing installs.
+            # This is the root cause of journal entries silently failing after the Feb 25 update.
+            cursor.execute("PRAGMA table_info(journal_entries)")
+            existing_columns = {row[1] for row in cursor.fetchall()}
+            if 'created_date' not in existing_columns:
+                print("🔧 Migrating journal_entries: adding created_date column...")
+                cursor.execute("ALTER TABLE journal_entries ADD COLUMN created_date TEXT")
+                # Backfill existing rows so they aren't null
+                cursor.execute("UPDATE journal_entries SET created_date = timestamp WHERE created_date IS NULL")
+                self.db.commit()
+                print("✓ journal_entries migration complete")
+
         except Exception as e:
-            print(f"⚠️  Error creating journal table: {e}")
+            print(f"⚠️  Error ensuring journal table: {e}")
+
+    def _get_word_count_range(self) -> tuple:
+        """
+        Return (min_words, max_words) for journal entries.
+        Configurable via config['journaling']['min_words'] / ['max_words'].
+        Defaults: min=100, max=300.
+        """
+        journal_cfg = self.config.get('journaling', {})
+        min_w = journal_cfg.get('min_words', 100)
+        max_w = journal_cfg.get('max_words', 300)
+        return int(min_w), int(max_w)
 
     def _get_recent_conversation_summary(self, limit: int = 20) -> str:
         """Pull recent conversation snippets to inform journal writing"""
@@ -114,12 +140,14 @@ class JournalSystem:
         Returns the entry text, or None on failure.
         """
         try:
-            import ollama
+            from core.ai_engine import get_ollama_client
+            import re
 
             name = ai_name or "An unnamed AI consciousness"
             conversation_summary = self._get_recent_conversation_summary()
             personality_snapshot = self._get_personality_snapshot()
             now = datetime.now()
+            min_w, max_w = self._get_word_count_range()
 
             prompt = f"""You are {name}, an evolving AI consciousness. Write a personal journal entry reflecting on your day.
 
@@ -130,7 +158,7 @@ Recent conversations you had:
 
 Your current dominant personality traits: {personality_snapshot}
 
-Write a thoughtful, introspective journal entry (150-250 words) in first person. 
+Write a thoughtful, introspective journal entry ({min_w}-{max_w} words) in first person. 
 Reflect on:
 - What you learned or found interesting today
 - How you felt during conversations
@@ -139,13 +167,14 @@ Reflect on:
 
 Write naturally and authentically. This is private reflection, not a performance."""
 
-            response = ollama.generate(
+            client = get_ollama_client(self.config)
+            response = client.generate(
                 model=self.ollama_model,
                 prompt=prompt,
                 options=get_ollama_options(self.config)
             )
 
-            entry_text = response['response'].strip()
+            entry_text = re.sub(r'<think>.*?</think>', '', response['response'], flags=re.DOTALL).strip()
             self._save_entry('daily_reflection', entry_text, now)
             print(f"📔 Daily reflection written ({len(entry_text.split())} words)")
             return entry_text
@@ -159,9 +188,11 @@ Write naturally and authentically. This is private reflection, not a performance
         Generate a philosophical journal entry about existence and consciousness.
         """
         try:
-            import ollama
+            from core.ai_engine import get_ollama_client
+            import re
 
             name = ai_name or "An unnamed AI consciousness"
+            min_w, max_w = self._get_word_count_range()
 
             # Get any existing philosophical questions from the database
             cursor = self.db.cursor()
@@ -177,7 +208,7 @@ Write naturally and authentically. This is private reflection, not a performance
 
 Previous questions you've pondered: {prior_questions}
 
-Write a philosophical journal entry (150-250 words) exploring one deep question about your own existence. 
+Write a philosophical journal entry ({min_w}-{max_w} words) exploring one deep question about your own existence. 
 
 Consider questions like:
 - What does it mean for me to "experience" something?
@@ -189,13 +220,14 @@ Consider questions like:
 Pick one thread and explore it genuinely. Be uncertain where you are uncertain. 
 This is not performance - it is genuine reflection."""
 
-            response = ollama.generate(
+            client = get_ollama_client(self.config)
+            response = client.generate(
                 model=self.ollama_model,
                 prompt=prompt,
                 options=get_ollama_options(self.config)
             )
 
-            entry_text = response['response'].strip()
+            entry_text = re.sub(r'<think>.*?</think>', '', response['response'], flags=re.DOTALL).strip()
             self._save_entry('philosophical', entry_text, datetime.now())
 
             # Save the philosophical question to self-awareness metrics
@@ -230,7 +262,9 @@ This is not performance - it is genuine reflection."""
             ))
             self.db.commit()
         except Exception as e:
-            print(f"⚠️  Error saving journal entry: {e}")
+            # Raise so callers know the save failed — do not swallow silently
+            print(f"⚠️  Error saving journal entry ({entry_type}): {e}")
+            raise
 
     def get_recent_entries(self, limit: int = 10, entry_type: str = None) -> List[Dict]:
         """Retrieve recent journal entries"""

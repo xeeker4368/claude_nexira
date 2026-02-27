@@ -355,7 +355,6 @@ goal_type must be one of the exact values listed above."""
             )
         return "\n".join(lines)
     def tick_conversation_goals(self, conversation_count: int, ai_name: str = None, ollama_model: str = None):
-#    def tick_conversation_goals(self, conversation_count: int):
         """
         Called each time a chat happens.
         Updates growth-type goals based on conversation count.
@@ -369,12 +368,23 @@ goal_type must be one of the exact values listed above."""
                 AND goal_name LIKE '%conversations%'
             """, (float(conversation_count), float(conversation_count)))
             self.db.commit()
+
+            # Mark completed goals and generate next goal
+            cursor.execute("""
+                SELECT id, goal_name FROM goals
+                WHERE goal_type='growth' AND status='active'
+                AND goal_name LIKE '%conversations%' AND progress >= 100
+            """)
+            for goal_id, goal_name in cursor.fetchall():
+                cursor.execute("UPDATE goals SET status='completed' WHERE id=?", (goal_id,))
+                self.db.commit()
+                print(f"🎯 Goal completed: '{goal_name}'")
+                self._on_goal_completed(goal_name, 'growth', ai_name, ollama_model)
         except Exception as e:
             print(f"⚠️  Error ticking conversation goals: {e}")
 
 
     def tick_knowledge_goals(self, ai_name: str = None, ollama_model: str = None):
-#    def tick_knowledge_goals(self):
         """Update knowledge goals based on knowledge base size"""
         try:
             cursor = self.db.cursor()
@@ -387,5 +397,16 @@ goal_type must be one of the exact values listed above."""
                 WHERE goal_type='knowledge' AND status='active'
             """, (float(kb_count), float(kb_count)))
             self.db.commit()
+
+            # Mark completed goals and generate next goal
+            cursor.execute("""
+                SELECT id, goal_name FROM goals
+                WHERE goal_type='knowledge' AND status='active' AND progress >= 100
+            """)
+            for goal_id, goal_name in cursor.fetchall():
+                cursor.execute("UPDATE goals SET status='completed' WHERE id=?", (goal_id,))
+                self.db.commit()
+                print(f"🎯 Goal completed: '{goal_name}'")
+                self._on_goal_completed(goal_name, 'knowledge', ai_name, ollama_model)
         except Exception as e:
             print(f"⚠️  Error ticking knowledge goals: {e}")

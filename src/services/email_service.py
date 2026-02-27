@@ -171,6 +171,8 @@ class EmailService:
             cursor.execute("""
                 SELECT content FROM chat_history
                 WHERE role='user' AND timestamp >= ?
+                AND content NOT LIKE '[%]:%'
+                AND content NOT LIKE '[Operator]:%'
                 ORDER BY importance_score DESC LIMIT 5
             """, (today_start,))
             highlights = [row[0][:120] for row in cursor.fetchall()]
@@ -284,8 +286,12 @@ class EmailService:
         if reports.get('tasks_completed', True):
             cursor = self.db.cursor()
             cursor.execute("""
-                SELECT topic, research_notes FROM curiosity_queue
-                WHERE status='completed' AND completed_date >= ?
+                SELECT cq.topic, cq.research_notes,
+                       COALESCE(kb.source, 'curiosity_research') as source
+                FROM curiosity_queue cq
+                LEFT JOIN knowledge_base kb ON LOWER(kb.topic) = LOWER(cq.topic)
+                    AND kb.source LIKE 'curiosity%'
+                WHERE cq.status='completed' AND cq.completed_date >= ?
                 LIMIT 5
             """, (today_start,))
             researched = cursor.fetchall()
@@ -293,17 +299,19 @@ class EmailService:
             if researched:
                 t_html = ''.join(
                     f'<li style="margin-bottom:6px"><strong style="color:#00d4ff">{r[0]}</strong>'
+                    f'<span style="color:#5a7080;font-size:11px;margin-left:6px">'
+                    f'{"🌐 web" if (r[2] or "").startswith("curiosity_web") else "🧠 model"}</span>'
                     f'<br><span style="color:#8ba3b0">{(r[1] or "")[:100]}</span></li>'
                     for r in researched
                 )
                 sections_html.append(f"""
                 <div class="section">
-                    <h3>🔍 Topics Researched</h3>
+                    <h3>🔍 Curiosity Queue — Researched</h3>
                     <ul>{t_html}</ul>
                 </div>""")
 
                 sections_plain.append(
-                    "RESEARCHED:\n" + '\n'.join(f"  - {r[0]}" for r in researched)
+                    "CURIOSITY RESEARCHED:\n" + '\n'.join(f"  - {r[0]}" for r in researched)
                 )
 
         # ── Moltbook activity ──

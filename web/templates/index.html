@@ -1531,6 +1531,9 @@
         <div class="nav-item" onclick="switchPanel('backups', this)">
             <span class="icon">💾</span> Backups
         </div>
+        <div class="nav-item" onclick="switchPanel('health', this)">
+            <span class="icon">🩺</span> Health
+        </div>
         <div class="nav-item" onclick="switchPanel('personality-log', this)">
             <span class="icon">🧬</span> Trait Log
         </div>
@@ -2108,9 +2111,41 @@
                 </div>
             </div>
         </div>
+
+        <!-- Health panel -->
+        <div class="panel" id="panel-health">
+            <div class="panel-header">
+                <div>
+                    <div class="panel-title">System Health</div>
+                    <div class="panel-subtitle">Live status of all critical systems + error log</div>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center">
+                    <button class="action-btn" onclick="runHealthCheck()">↻ Check Now</button>
+                    <button class="action-btn" onclick="validateConfig()">✓ Validate Config</button>
+                </div>
+            </div>
+            <div class="panel-body" style="display:flex;flex-direction:column;gap:16px">
+                <!-- Health status grid -->
+                <div id="healthGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px">
+                    <div style="color:var(--text-dim);font-size:13px">Click "Check Now" to run a health check.</div>
+                </div>
+                <!-- Config validation result -->
+                <div id="configValidationResult" style="display:none"></div>
+                <!-- Error log -->
+                <div>
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+                        <div style="font-size:13px;font-weight:600;color:var(--text)">Error Log</div>
+                        <label style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:4px;cursor:pointer">
+                            <input type="checkbox" id="showResolved" onchange="loadErrorLog()" style="margin:0">
+                            Show resolved
+                        </label>
+                    </div>
+                    <div id="errorLog"><div style="color:var(--text-dim);font-size:13px">Run a health check to load error log.</div></div>
+                </div>
+            </div>
+        </div>
     </main>
 </div>
-
 <script>
 // ── State ──────────────────────────────────────────────────
 let aiName = 'AI';
@@ -2214,6 +2249,7 @@ function switchPanel(name, el) {
         case 'threads':         loadThreads();         break;
         case 'selfaware':       loadSelfAwareness();   break;
         case 'backups':         loadBackups();         break;
+        case 'health':          runHealthCheck(); loadErrorLog(); break;
         case 'personality-log': loadPersonalityLog();  break;
         case 'moltbook':        loadMoltbookStatus();  break;
         case 'workspace':       loadWorkspace();        break;
@@ -2288,6 +2324,10 @@ async function sendMessage() {
                         act.message, null);
                 } else if (act.type === 'memory') {
                     addActionCard('memory', '💾', 'Saved to Memory', act.preview, null);
+                } else if (act.type === 'image_gen') {
+                    addInlineImage(act);
+                } else if (act.type === 'style_transfer') {
+                    addInlineImage(act);
                 }
             }
         }
@@ -2362,6 +2402,47 @@ function addMessage(role, content, confidence = null, accentColor = null, stored
     area.appendChild(div);
     area.scrollTop = area.scrollHeight;
     return id;
+}
+
+function addInlineImage(act) {
+    /* Render a generated or style-transferred image inline in the chat area.
+       Works on desktop and mobile — image is served via the existing
+       /api/images/file/<path> route so it loads over HTTP from any device. */
+    if (!act.success || !act.path) {
+        addActionCard('image', '🎨', 'Image Generation Failed', act.message || 'Unknown error', null);
+        return;
+    }
+
+    const area = document.getElementById('chatMessages');
+    const id   = 'img_' + Date.now();
+    const src  = '/api/images/file/' + act.path;
+
+    const isStyle   = act.type === 'style_transfer';
+    const label     = isStyle ? '🖌 Style Transfer' : '🎨 Image Generated';
+    const sublabel  = act.prompt || act.style_prompt || '';
+
+    const div = document.createElement('div');
+    div.className = 'msg ai';
+    div.id = id;
+    div.innerHTML = `
+        <div class="msg-avatar">🎨</div>
+        <div class="msg-body">
+            <div class="msg-bubble" style="padding:10px;max-width:340px;">
+                <div style="font-size:11px;opacity:0.6;margin-bottom:6px;">${label}</div>
+                <a href="${src}" target="_blank" rel="noopener" title="Open full size">
+                    <img src="${src}"
+                         alt="${escapeHtml(sublabel)}"
+                         style="width:100%;max-width:300px;border-radius:8px;display:block;cursor:zoom-in;"
+                         onerror="this.parentElement.innerHTML='<span style=&quot;opacity:.5;font-size:12px&quot;>Image not found: ${escapeHtml(act.path)}</span>'"
+                    >
+                </a>
+                ${sublabel ? `<div style="font-size:11px;opacity:0.5;margin-top:6px;font-style:italic;">${escapeHtml(sublabel.substring(0,80))}${sublabel.length>80?'…':''}</div>` : ''}
+            </div>
+            <div class="msg-meta"><span style="opacity:.4;font-size:10px">${new Date().toLocaleTimeString()}</span></div>
+        </div>`;
+
+    area.appendChild(div);
+    area.scrollTop = area.scrollHeight;
 }
 
 function addThinking() {
@@ -3436,6 +3517,114 @@ function drawAwarenessChart(trend) {
     ctx.lineWidth = 2;
     pts.forEach(([x,y],i) => i===0?ctx.moveTo(x,y):ctx.lineTo(x,y));
     ctx.stroke();
+}
+
+// ── v12: Health Check & Error Log ────────────────────────────
+const HEALTH_STATUS_COLORS = {
+    ok:          { bg: 'rgba(0,255,163,0.08)', border: 'rgba(0,255,163,0.25)', text: 'var(--green)',   icon: '✓' },
+    warning:     { bg: 'rgba(255,200,0,0.08)', border: 'rgba(255,200,0,0.25)', text: '#ffc800',        icon: '⚠' },
+    error:       { bg: 'rgba(255,77,109,0.08)', border: 'rgba(255,77,109,0.3)', text: 'var(--red)',    icon: '✗' },
+    critical:    { bg: 'rgba(255,77,109,0.12)', border: 'rgba(255,77,109,0.4)', text: 'var(--red)',    icon: '⛔' },
+    degraded:    { bg: 'rgba(255,200,0,0.08)', border: 'rgba(255,200,0,0.25)', text: '#ffc800',        icon: '⚠' },
+    unavailable: { bg: 'rgba(120,120,120,0.08)', border: 'rgba(120,120,120,0.2)', text: 'var(--text-dim)', icon: '—' },
+    unknown:     { bg: 'rgba(120,120,120,0.08)', border: 'rgba(120,120,120,0.2)', text: 'var(--text-dim)', icon: '?' },
+};
+
+function healthCard(name, sys) {
+    const s = HEALTH_STATUS_COLORS[sys.status] || HEALTH_STATUS_COLORS.unknown;
+    const details = Object.entries(sys)
+        .filter(([k]) => !['status'].includes(k))
+        .map(([k,v]) => `<span style="color:var(--text-dim)">${k}:</span> ${v}`)
+        .join(' &nbsp;·&nbsp; ');
+    return `
+        <div style="padding:12px 14px;border-radius:10px;background:${s.bg};border:1px solid ${s.border}">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                <span style="color:${s.text};font-size:14px">${s.icon}</span>
+                <span style="font-size:13px;font-weight:600;color:var(--text)">${name}</span>
+                <span style="font-size:11px;padding:1px 6px;border-radius:4px;background:${s.border};color:${s.text};font-family:var(--font-mono)">${sys.status}</span>
+            </div>
+            <div style="font-size:11px;color:var(--text-dim);font-family:var(--font-mono);line-height:1.6">${details}</div>
+        </div>`;
+}
+
+async function runHealthCheck() {
+    const grid = document.getElementById('healthGrid');
+    grid.innerHTML = '<div style="color:var(--text-dim);font-size:13px">⏳ Checking systems…</div>';
+    try {
+        const data = await fetch('/api/health').then(r => r.json());
+        const overallColor = HEALTH_STATUS_COLORS[data.status] || HEALTH_STATUS_COLORS.unknown;
+        const systemCards  = Object.entries(data.systems).map(([name, sys]) => healthCard(name, sys)).join('');
+        grid.innerHTML = `
+            <div style="grid-column:1/-1;padding:10px 14px;border-radius:8px;background:${overallColor.bg};border:1px solid ${overallColor.border};
+                        font-family:var(--font-mono);font-size:12px;color:${overallColor.text}">
+                Overall: <strong>${data.status.toUpperCase()}</strong> &nbsp;·&nbsp; Last checked: ${new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})}
+            </div>
+            ${systemCards}`;
+        loadErrorLog();
+    } catch(e) {
+        grid.innerHTML = `<div style="color:var(--red)">✗ Health check failed: ${e.message}</div>`;
+    }
+}
+
+async function validateConfig() {
+    const el = document.getElementById('configValidationResult');
+    el.style.display = 'block';
+    el.innerHTML = '<div style="color:var(--text-dim);font-size:13px">⏳ Validating config…</div>';
+    try {
+        const data = await fetch('/api/config/validate').then(r => r.json());
+        const color = data.valid ? (data.warnings.length ? '#ffc800' : 'var(--green)') : 'var(--red)';
+        const border = data.valid ? (data.warnings.length ? 'rgba(255,200,0,0.25)' : 'rgba(0,255,163,0.25)') : 'rgba(255,77,109,0.3)';
+        const issueHtml  = data.issues.map(i  => `<div>✗ ${i}</div>`).join('');
+        const warnHtml   = data.warnings.map(w => `<div>⚠ ${w}</div>`).join('');
+        el.innerHTML = `
+            <div style="padding:12px 14px;border-radius:10px;background:rgba(0,0,0,0.2);border:1px solid ${border};font-family:var(--font-mono);font-size:12px">
+                <div style="color:${color};font-weight:600;margin-bottom:6px">${data.valid ? '✓ Config valid' : '✗ Config invalid'} — ${data.issues.length} error(s), ${data.warnings.length} warning(s)</div>
+                <div style="color:var(--red)">${issueHtml}</div>
+                <div style="color:#ffc800">${warnHtml}</div>
+                ${!issueHtml && !warnHtml ? '<div style="color:var(--text-dim)">All checks passed.</div>' : ''}
+            </div>`;
+    } catch(e) {
+        el.innerHTML = `<div style="color:var(--red)">✗ Validation failed: ${e.message}</div>`;
+    }
+}
+
+async function loadErrorLog() {
+    const el = document.getElementById('errorLog');
+    if (!el) return;
+    const showResolved = document.getElementById('showResolved')?.checked || false;
+    try {
+        const data = await fetch(`/api/errors?include_resolved=${showResolved}&limit=50`).then(r => r.json());
+        const errors = data.errors || [];
+        if (!errors.length) {
+            el.innerHTML = '<div style="color:var(--text-dim);font-size:13px">No errors logged — all systems clean ✓</div>';
+            return;
+        }
+        const LEVEL_COLORS = { error: 'var(--red)', warning: '#ffc800', info: 'var(--cyan)' };
+        el.innerHTML = errors.map(e => `
+            <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 14px;
+                background:var(--surface);border:1px solid var(--border2);border-radius:8px;margin-bottom:6px;
+                opacity:${e.resolved ? 0.4 : 1}">
+                <span style="color:${LEVEL_COLORS[e.level]||'var(--text)'};font-size:12px;margin-top:2px;font-family:var(--font-mono)">${e.level.toUpperCase()}</span>
+                <div style="flex:1">
+                    <div style="display:flex;gap:8px;align-items:baseline">
+                        <span style="font-size:12px;font-weight:600;color:var(--text)">${e.source}</span>
+                        <span style="font-size:11px;color:var(--text-dim);font-family:var(--font-mono)">${new Date(e.timestamp).toLocaleString()}</span>
+                    </div>
+                    <div style="font-size:12px;color:var(--text-mid);margin-top:2px">${e.message}</div>
+                    ${e.details ? `<div style="font-size:11px;color:var(--text-dim);font-family:var(--font-mono);margin-top:4px;white-space:pre-wrap">${e.details}</div>` : ''}
+                </div>
+                ${!e.resolved ? `<button onclick="resolveError(${e.id})" style="font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(0,212,255,0.08);
+                    color:var(--cyan);border:1px solid rgba(0,212,255,0.2);cursor:pointer;white-space:nowrap">Resolve</button>` : 
+                    '<span style="font-size:10px;color:var(--text-dim);font-family:var(--font-mono)">resolved</span>'}
+            </div>`).join('');
+    } catch(e) {
+        el.innerHTML = `<div style="color:var(--red)">✗ ${e.message}</div>`;
+    }
+}
+
+async function resolveError(id) {
+    await fetch(`/api/errors/${id}/resolve`, {method:'POST'});
+    loadErrorLog();
 }
 
 // ── Phase 4: Backups ───────────────────────────────────────

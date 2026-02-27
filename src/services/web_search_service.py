@@ -183,39 +183,69 @@ class WebSearchService:
     def should_search(self, message: str) -> Optional[str]:
         """
         Detect if a message needs web search. Returns search query or None.
-        Conservative — only fires on clear signals to avoid hallucinated searches.
+        Conservative — only fires on clear, unambiguous search intent.
+
+        Key rules:
+        - Must start with or be primarily a question/request, not a statement
+        - Minimum length to avoid matching conversational phrases
+        - Extracts a clean query rather than passing the raw message
         """
         msg = message.lower().strip()
 
-        # Never search on very short messages
-        if len(msg) < 8:
+        # Never search on short messages or pure statements
+        if len(msg) < 15:
             return None
 
-        # Explicit search commands
-        explicit_commands = [
-            'search for ', 'search the web', 'look up ', 'google ',
-            'find the latest', 'what is the latest', 'what are the latest',
-            'current news', 'news about ', 'news on ',
-            'stock price', 'stock ticker', 'share price',
-            'bitcoin price', 'crypto price', 'btc price', 'eth price',
-            'coin price', 'market cap',
-            'who is the current ', 'who won the ', 'who won last',
-            'what happened to ', 'what happened with ',
-            "what's the weather", 'weather in ', 'weather forecast',
-            "what's the current ", "what is the current ",
-            'latest version', 'latest release', 'current version',
-        ]
-        for phrase in explicit_commands:
-            if phrase in msg:
-                query = message.strip()
+        # Never search if message looks like a directive or statement
+        # (starts with "I", "Right now", "The", "This", "That", etc.)
+        statement_starters = (
+            "i ", "i'", "right now", "the ", "this ", "that ", "these ",
+            "just ", "no more", "already", "it ", "we ", "you ", "she ",
+            "he ", "they ", "there ", "here ", "when ", "while "
+        )
+        if any(msg.startswith(s) for s in statement_starters):
+            return None
+
+        # Explicit search commands — extract clean query after the trigger
+        explicit_triggers = {
+            'search for ':        'search for ',
+            'search the web for ': 'search the web for ',
+            'look up ':           'look up ',
+            'google ':            'google ',
+            'find the latest ':   'find the latest ',
+            'what is the latest ': 'what is the latest ',
+            'current news about ': 'current news about ',
+            'news about ':        'news about ',
+            'stock price of ':    'stock price of ',
+            'bitcoin price':      None,
+            'btc price':          None,
+            'crypto price':       None,
+            "what's the weather": None,
+            'weather in ':        'weather in ',
+            'latest version of ': 'latest version of ',
+        }
+        for trigger, strip_prefix in explicit_triggers.items():
+            if trigger in msg:
+                if strip_prefix:
+                    idx = msg.find(strip_prefix) + len(strip_prefix)
+                    query = message[idx:].strip()
+                else:
+                    query = message.strip()
+                # Clean filler words
                 for filler in ['can you ', 'please ', 'could you ', 'i need you to ']:
                     if query.lower().startswith(filler):
                         query = query[len(filler):]
-                return query.strip()[:120]
+                return query.strip()[:120] if len(query) > 3 else None
 
-        # Time-sensitive markers
-        for phrase in ['right now', 'live score', 'live game', 'breaking news', 'just happened']:
-            if phrase in msg:
+        # Questions starting with who/what/when/where about CURRENT status only
+        current_markers = [
+            'who is the current ', 'who won the ', 'who won last ',
+            "what's the current ", "what is the current ",
+            'what is the price of ', "what's the price of ",
+            'live score', 'breaking news',
+        ]
+        for phrase in current_markers:
+            if msg.startswith(phrase) or msg.startswith('what ' + phrase):
                 return message.strip()[:120]
 
         return None

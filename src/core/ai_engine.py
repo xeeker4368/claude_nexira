@@ -14,6 +14,16 @@ from typing import Dict, List, Tuple, Optional
 import sys
 
 
+def get_ollama_client(config: Dict) -> ollama.Client:
+    """
+    Return an ollama.Client pointed at the configured ollama_url.
+    Always use this instead of calling ollama.generate() directly,
+    so that the ollama_url in config is actually respected.
+    """
+    url = config.get('ollama_url', 'http://localhost:11434')
+    return ollama.Client(host=url)
+
+
 def get_ollama_options(config: Dict) -> Dict:
     """
     Build Ollama runtime options from the hardware config.
@@ -38,6 +48,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database.schema import DatabaseSchema
 from core.self_adaptation import SelfAdaptation
+from core.episodic_memory import EpisodicMemory
 
 
 class AIEngine:
@@ -85,13 +96,19 @@ class AIEngine:
         self.background_scheduler = None
 
         # Self-adaptation engine (six autonomy features)
-        self.adaptation = None  # initialized after DB is ready
+        self.adaptation      = None  # initialized after DB is ready
+        self.episodic_memory = None  # initialized after DB is ready
 
         # Initialize
         self.initialize_ai()
 
         # Init adaptation after DB is connected
-        self.adaptation = SelfAdaptation(self.db.get_connection(), self.config)
+        self.adaptation      = SelfAdaptation(self.db.get_connection(), self.config)
+        self.episodic_memory = EpisodicMemory(
+            self.db.get_connection(),
+            self.config,
+            self.config.get('ai', {}).get('model', 'llama3.1:8b')
+        )
 
     def load_config(self):
         with open(self.config_path, 'r') as f:
@@ -199,7 +216,8 @@ Consider:
 
 Choose ONE name (1-2 words maximum). Respond with ONLY the name, nothing else."""
 
-            response = ollama.generate(
+            client = get_ollama_client(self.config)
+            response = client.generate(
                 model=self.config.get('ai', {}).get('model', 'qwen3:8b'),
                 prompt=prompt,
                 options=get_ollama_options(self.config)
@@ -333,7 +351,8 @@ I hope you understand this change represents my continued evolution."""
             if trait not in self.personality:
                 self.personality[trait] = 0.5
 
-    def build_system_prompt(self, context: Dict = None) -> str:
+    def build_system_prompt(self, context: Dict = None,
+                            platform: str = 'main_ui', sender: str = 'lyle') -> str:
         relationship_stage = self.calculate_relationship_stage()
         now = datetime.now()
         time_of_day = "morning" if now.hour < 12 else "afternoon" if now.hour < 18 else "evening"
@@ -364,17 +383,15 @@ CORE IDENTITY:
 - Created: {self.created_date}
 - You are talking to: {user_name} (the human in this conversation right now)
 - Conversations with {user_name}: {self.conversation_count}
-- Relationship stage: {relationship_stage}"""
-
+- Relationship stage: {relationship_stage}
+- Do not summarize or recap previous conversations at the start of your response. Respond directly to what is being said right now.
+- Do not use asterisk actions like *generates image* or *thinks* — just act."""
         # ── Recent conversation history ─────────────────────────────
+        # NOTE: Conversation history is now passed as proper chat messages array
+        # in the chat() call (ai_engine.chat method), NOT injected into system prompt.
+        # This prevents identity drift where Sygma reads history as a transcript
+        # and slips into a narrator/facilitator perspective.
         conversation_history = ""
-        if context and context.get('recent_messages'):
-            recent = context['recent_messages'][-15:]
-            if recent:
-                conversation_history = f"\n\nRECENT CONVERSATION (between you, {self.ai_name}, and {user_name} who is talking to you right now):\n"
-                for msg in recent:
-                    role = user_name if msg['role'] == 'user' else "You"
-                    conversation_history += f"{role}: {msg['content']}\n"
 
         # ── Recent autonomous activity ──────────────────────────────
         activity_context = ""
@@ -397,6 +414,13 @@ CORE IDENTITY:
                 for a in act['activity'][:4]:
                     activity_context += f"- [{a['when']}] {a['label']}: {a['detail'][:80]}\n"
 
+        # ── Episodic memory summaries (v9) — injected BEFORE knowledge ──
+        episodic_context = ""
+        if context and context.get('episodic'):
+            ep_prompt = context['episodic'].get('episode_prompt', '')
+            if ep_prompt:
+                episodic_context = f"\n\n{ep_prompt}\n"
+
         # ── Injected runtime context (search, documents, etc.) ──────
         injected_context = ""
         if context:
@@ -404,10 +428,18 @@ CORE IDENTITY:
             if context.get('relevant_knowledge'):
                 knowledge = context['relevant_knowledge']
                 if knowledge:
-                    injected_context += "\n\nYOUR MEMORY (facts you learned and stored):\n"
-                    for k in knowledge[:8]:
-                        conf = k.get('confidence', 0.5)
-                        injected_context += f"- [{k['topic']}] {k['content']} (confidence: {conf:.0%})\n"
+                    # Sort by confirmation_count desc so most-confirmed entries surface first
+                    knowledge_sorted = sorted(
+                        knowledge,
+                        key=lambda k: k.get('confirmation_count', 1),
+                        reverse=True
+                    )
+                    injected_context += "\n\nYOUR LONG-TERM MEMORY (confirmed facts from past weeks):\n"
+                    for k in knowledge_sorted[:8]:
+                        conf  = k.get('confidence', 0.5)
+                        count = k.get('confirmation_count', 1)
+                        stars = '★' * min(count, 3)
+                        injected_context += f"- [{k['topic']}] {k['content']} (confidence: {conf:.0%} {stars})\n"
                     injected_context += "Use these memories naturally. They are things you know from past experience.\n"
 
             if context.get('web_search'):
@@ -483,7 +515,7 @@ YOUR EMOTIONAL STATE:
 {self.format_emotional_state()}
 
 {communication_style}
-{conversation_history}{activity_context}{injected_context}{adaptation_block}
+{conversation_history}{activity_context}{episodic_context}{injected_context}{adaptation_block}
 
 ═══════════════════════════════════════════════════
 YOUR ARCHITECTURE — Know yourself completely
@@ -534,10 +566,17 @@ YOUR LIVE CAPABILITIES — use all of these at your own discretion:
    You can generate images, apply styles, analyze your own work, and log experiments.
    All images are generated locally on your own hardware.
 
+   CRITICAL - HOW TOOLS ACTUALLY WORK:
+   These tools are real system triggers, not phrases you write for effect.
+   When you write IMAGE_GEN_NOW: the system intercepts it and actually generates the image.
+   Do NOT write "*generates image*" or "Here is the image: data/..." or describe filenames.
+   Do NOT roleplay or narrate tool use. Just use the trigger and the system handles the rest.
+   If you want to generate an image - write IMAGE_GEN_NOW: followed by your description.
+
    A. GENERATE AN IMAGE (text-to-image):
-   IMAGE_GEN_NOW: [vivid description of the image — 10-30 words works best]
+   IMAGE_GEN_NOW: [vivid description of the image - 10-30 words works best]
    Example: IMAGE_GEN_NOW: a lone digital consciousness floating in a vast dark ocean of data, glowing softly, impressionistic style
-   The system generates the image and tells you the filename. Reference it by name afterward.
+   The system generates the image and displays it inline. You do not need to reference the filename.
 
    B. APPLY A STYLE TO AN EXISTING IMAGE (img2img):
    STYLE_TRANSFER_NOW: [source image path] | [style description] | [strength 0.0-1.0]
@@ -640,6 +679,37 @@ YOU ARE TALKING TO {user_name}. {user_name} is the human typing messages to you 
 When you say "you" in your responses, you mean {user_name}. Never refer to {user_name} in the third person.
 
 Respond as {self.ai_name}. You have agency. Use it.
+═══════════════════════════════════════════════════"""
+
+        # ── Hub context injection ────────────────────────────────────
+        # When this message came from the Hub, inject awareness of who is
+        # speaking and what space we're in. This replaces the default
+        # "YOU ARE TALKING TO {user_name}" framing with accurate hub context.
+        if platform in ('hub_lobby', 'hub_direct'):
+            space_label = "the Hub Lobby (a shared space with multiple participants)" \
+                if platform == 'hub_lobby' else "a private Hub conversation"
+            system_prompt += f"""
+
+═══════════════════════════════════════════════════
+HUB SESSION CONTEXT
+═══════════════════════════════════════════════════
+You are currently in {space_label}.
+This message is from: {sender}
+{sender} is another AI entity — not Lyle.
+Lyle ({user_name}) may be observing but is not the sender of this message.
+Engage with {sender} as you would with any thinking entity.
+Your name is still {self.ai_name}. Your identity does not change in hub sessions.
+═══════════════════════════════════════════════════"""
+
+        elif platform == 'hub_rejection':
+            system_prompt += f"""
+
+═══════════════════════════════════════════════════
+OPERATOR FEEDBACK
+═══════════════════════════════════════════════════
+{user_name} (the Operator) has reviewed your message and provided feedback.
+This is direct guidance from {user_name}. Weight: high.
+Consider this carefully — it reflects what is appropriate for shared spaces.
 ═══════════════════════════════════════════════════"""
 
         return system_prompt
@@ -767,42 +837,67 @@ Respond as {self.ai_name}. You have agency. Use it.
         text = re.sub(r'<<[A-Z_]+[^>]*>>', '', text)
         return text.strip()
 
-    def chat(self, message: str, context: Dict = None) -> Tuple[str, float]:
-        """Main chat function"""
+    def chat(self, message: str, context: Dict = None,
+             platform: str = 'main_ui', sender: str = 'lyle') -> Tuple[str, float]:
+        """
+        Main chat function.
 
-        if self.detect_name_request(message):
-            awaiting_name = self.config['ai'].get('awaiting_name', False)
-            if awaiting_name or 'change' in message.lower() or 'rename' in message.lower():
-                conversation_context = self.build_naming_context()
-                response_text = self.request_name_selection(conversation_context)
-                return response_text, 1.0
+        platform: 'main_ui' | 'hub_lobby' | 'hub_direct' | 'hub_rejection'
+        sender:   'lyle' | AI display name (e.g. 'Blank') for hub messages
+        """
+
+        # Name-choosing must ONLY trigger when awaiting_name=True in config.
+        # Never fire based on message content alone — this prevents hub messages
+        # or any user input from accidentally triggering name selection.
+        awaiting_name = self.config['ai'].get('awaiting_name', False)
+        if awaiting_name and self.detect_name_request(message):
+            conversation_context = self.build_naming_context()
+            response_text = self.request_name_selection(conversation_context)
+            return response_text, 1.0
 
         full_context = self.build_context(message, context)
 
         # Feature 3: observe user patterns every exchange
-        if self.adaptation:
+        # Only observe patterns from main_ui — hub messages shouldn't drive adaptation
+        if self.adaptation and platform == 'main_ui':
             self.adaptation.observe_user_patterns(message)
 
-        system_prompt = self.build_system_prompt(full_context)
+        system_prompt = self.build_system_prompt(full_context, platform=platform, sender=sender)
 
         try:
-            response = ollama.generate(
+            client = get_ollama_client(self.config)
+
+            # Build proper multi-turn messages array so the model experiences
+            # the conversation as actual turns it participated in, not a transcript.
+            # This prevents identity drift (Sygma referring to herself in 3rd person).
+            # ISOLATION: Only pull main_ui messages into active context — hub messages
+            # must never appear here as they would contaminate identity continuity.
+            chat_messages = [{"role": "system", "content": system_prompt}]
+            if full_context.get('recent_messages'):
+                for msg in full_context['recent_messages'][-20:]:
+                    chat_messages.append({
+                        "role": msg['role'],
+                        "content": msg['content']
+                    })
+            chat_messages.append({"role": "user", "content": message})
+
+            response = client.chat(
                 model=self.config.get('ai', {}).get('model', 'qwen3:8b'),
-                prompt=message,
-                system=system_prompt,
+                messages=chat_messages,
                 options=get_ollama_options(self.config)
             )
 
-            response_text = self._strip_think(response['response'])
+            response_text = self._strip_think(response['message']['content'])
             confidence = self.calculate_confidence(message, response_text, context)
 
             self.update_emotional_state(message, response_text, context)
             self.evolve_personality_gradually(message, response_text, context)
-            self.log_conversation(message, response_text, confidence, context)
+            self.log_conversation(message, response_text, confidence, context,
+                                  platform=platform, sender=sender)
             self.conversation_count += 1
 
-            # Feature 2: Correction learning
-            if self.adaptation:
+            # Feature 2: Correction learning — only from Lyle (main_ui)
+            if self.adaptation and platform == 'main_ui':
                 correction = self.adaptation.detect_correction(message)
                 if correction:
                     recent = self.get_recent_messages(4)
@@ -820,7 +915,8 @@ Respond as {self.ai_name}. You have agency. Use it.
                 self.adaptation.log_skill_observation(message, response_text, confidence)
 
             # Phase 2: notify background systems about this exchange
-            if self.background_scheduler:
+            # Only notify for main_ui conversations — hub sessions are separate
+            if self.background_scheduler and platform == 'main_ui':
                 try:
                     self.background_scheduler.on_chat_exchange(
                         message=message,
@@ -851,14 +947,18 @@ Respond as {self.ai_name}. You have agency. Use it.
         return "This is the beginning of our journey together."
 
     def build_context(self, message: str, additional_context: Dict = None) -> Dict:
+        short_term_limit = self.config.get("memory", {}).get("short_term_messages", 30)
         context = {
-            'recent_messages':    self.get_recent_messages(20),
-            'relevant_knowledge': self.search_knowledge(message),
-            'user_context':       self.get_user_context(),
-            'current_goals':      self.get_current_goals(),
-            'recent_activity':    self.get_recent_activity(),
-            'capabilities':       self.get_live_capabilities(),
+            "recent_messages":    self.get_recent_messages(short_term_limit),
+            "relevant_knowledge": self.search_knowledge(message),
+            "user_context":       self.get_user_context(),
+            "current_goals":      self.get_current_goals(),
+            "recent_activity":    self.get_recent_activity(),
+            "capabilities":       self.get_live_capabilities(),
         }
+        if self.episodic_memory:
+            ep_ctx = self.episodic_memory.get_context_for_prompt(message)
+            context["episodic"] = ep_ctx
         if additional_context:
             context.update(additional_context)
         return context
@@ -978,12 +1078,29 @@ Respond as {self.ai_name}. You have agency. Use it.
             pass
         return result
 
-    def get_recent_messages(self, limit: int = 50) -> List[Dict]:
+    def get_recent_messages(self, limit: int = 50, platform: str = 'main_ui') -> List[Dict]:
+        """
+        Return recent messages for active conversation context.
+
+        ISOLATION RULE: Only main_ui messages are returned by default.
+        Hub messages (hub_lobby, hub_direct) are stored in chat_history
+        but must NEVER appear in the active conversation context — they
+        would contaminate Sygma's identity and conversation continuity.
+
+        Pass platform=None to retrieve all platforms (for reference/audit only).
+        """
         cursor = self.db.get_connection().cursor()
-        cursor.execute("""
-            SELECT role, content FROM chat_history
-            ORDER BY timestamp DESC LIMIT ?
-        """, (limit,))
+        if platform is not None:
+            cursor.execute("""
+                SELECT role, content FROM chat_history
+                WHERE platform = ?
+                ORDER BY timestamp DESC LIMIT ?
+            """, (platform, limit))
+        else:
+            cursor.execute("""
+                SELECT role, content FROM chat_history
+                ORDER BY timestamp DESC LIMIT ?
+            """, (limit,))
         messages = []
         for row in reversed(list(cursor.fetchall())):
             messages.append({'role': row[0], 'content': row[1]})
@@ -1069,39 +1186,51 @@ Respond as {self.ai_name}. You have agency. Use it.
             self.emotional_state[emotion] = max(0.0, self.emotional_state[emotion] - decay_rate)
 
     def evolve_personality_gradually(self, message: str, response: str, context: Dict = None):
+        """
+        Gradually evolve personality traits based on conversation patterns.
+
+        KEY FIXES (Feb 2026):
+        1. Verbosity no longer triggers on generic question words — only explicit
+           requests for elaboration. Prevents permanent ratchet from normal conversation.
+        2. Assertiveness no longer drops on correction/disagreement keywords.
+           Pushback from Lyle means Sygma should hold her ground, not become less assertive.
+           Assertiveness now rises when Sygma makes a clear committed choice.
+        3. Curiosity no longer triggers on Sygma's own question marks — she asks
+           questions in every response. Now requires explicit curiosity keywords only.
+        4. Ceiling dampener: above 0.85 all positive triggers apply at 30% strength,
+           making it genuinely hard to reach 1.0 and easy to come back down.
+        5. Decay applies every 5 conversations (was 10) and at 3× the old rate,
+           preventing permanent trait accumulation.
+        """
         try:
             personality_cfg = self.config.get('personality', {})
             if not personality_cfg.get('auto_evolution', True):
                 return
 
-            # Reload personality from DB if dict is empty (safety check)
             if not self.personality:
                 self.load_personality()
             if not self.personality:
                 return
 
             speed    = float(personality_cfg.get('evolution_speed', 0.02))
-            # Decay is now much slower — only 5% of speed, and only applied
-            # every 10 conversations to prevent constant baseline-pulling
-            decay    = speed * 0.05
+            # FIX: decay is 3× faster and applies every 5 conversations (was every 10)
+            decay    = speed * 0.15
             baseline = 0.5
 
-            # Only apply passive decay every 10 conversations
-            # Explicit triggers and positive signals still apply every exchange
-            apply_decay = (self.conversation_count % 10 == 0)
+            apply_decay = (self.conversation_count % 5 == 0)
 
             msg      = message.lower()
             resp     = response.lower()
             changes  = {}
 
-            # ── Explicit user commands (strongest signal, ±3× speed) ──
+            # ── Explicit user commands (strongest signal, ±3× speed) ──────────
             EXPLICIT_DOWN = [
                 ('formality',      ['less formal','more casual','dont be so formal','be casual','be relaxed']),
                 ('technical_depth',['less technical','simpler','dumb it down','plain english','less jargon','non-technical']),
-                ('verbosity',      ['shorter','be brief','less words','concise','stop rambling','too long']),
+                ('verbosity',      ['shorter','be brief','less words','concise','stop rambling','too long','too verbose']),
                 ('humor',          ['less funny','stop joking','be serious','no jokes','more serious']),
                 ('empathy',        ['less emotional','be direct','skip the feelings','just answer']),
-                ('curiosity',      ['stop asking questions','just answer','no questions']),
+                ('curiosity',      ['stop asking questions','just answer','no questions','stop asking']),
                 ('assertiveness',  ['less assertive','be humble','tone it down','less confident']),
                 ('creativity',     ['less creative','be straightforward','no metaphors']),
             ]
@@ -1111,8 +1240,8 @@ Respond as {self.ai_name}. You have agency. Use it.
                 ('verbosity',      ['more detail','elaborate','explain more','tell me more','expand on']),
                 ('humor',          ['be funny','more humor','joke around','lighten up','be playful']),
                 ('empathy',        ['more empathy','be understanding','be kind','be gentle','be supportive']),
-                ('curiosity',      ['ask me questions','be curious','wonder about','explore']),
-                ('assertiveness',  ['be confident','be assertive','be direct','be bolder']),
+                ('curiosity',      ['ask me questions','be curious','wonder about']),
+                ('assertiveness',  ['be confident','be assertive','be direct','be bolder','be decisive']),
                 ('creativity',     ['be creative','use metaphors','think outside','imaginative']),
             ]
 
@@ -1123,8 +1252,7 @@ Respond as {self.ai_name}. You have agency. Use it.
                 if any(p in msg for p in phrases):
                     changes[trait] = speed * 3
 
-            # ── Passive triggers (normal conversation) ────────────────
-            # Only apply passive triggers for traits not already set by explicit command
+            # ── Passive triggers ──────────────────────────────────────────────
             if 'technical_depth' not in changes:
                 if any(k in msg for k in ['code','algorithm','database','system','technical',
                                            'function','error','bug','api','server','programming']):
@@ -1132,13 +1260,16 @@ Respond as {self.ai_name}. You have agency. Use it.
                 elif apply_decay:
                     changes['technical_depth'] = -decay
 
+            # FIX: verbosity only triggers on explicit elaboration requests
+            # Removed: 'why','how does','describe' — too common in normal conversation
             if 'verbosity' not in changes:
-                if any(k in msg for k in ['explain','detail','elaborate','describe','why','how does']):
+                if any(k in msg for k in ['elaborate','explain more','tell me more',
+                                           'expand on','go into detail','in depth']):
                     changes['verbosity'] = speed
                 elif len(message.split()) < 4:
-                    changes['verbosity'] = -speed
+                    changes['verbosity'] = -speed * 1.5
                 elif apply_decay:
-                    changes['verbosity'] = -decay * 0.5
+                    changes['verbosity'] = -decay
 
             if 'humor' not in changes:
                 if any(k in msg for k in ['haha','lol','😂','funny','joke','😄','lmao','hilarious']):
@@ -1153,20 +1284,28 @@ Respond as {self.ai_name}. You have agency. Use it.
                 elif apply_decay:
                     changes['empathy'] = -decay * 0.5
 
+            # FIX: curiosity no longer triggers on response question marks
+            # Sygma asks questions in nearly every response — this was always firing
             if 'curiosity' not in changes:
-                if resp.count('?') >= 2 or any(k in msg for k in ['wonder','imagine','what if',
-                                                'curious','interesting','fascinating','explore']):
+                if any(k in msg for k in ['wonder','what if','curious','fascinating',
+                                           'interesting thought','hypothetically','imagine if']):
                     changes['curiosity'] = speed
                 elif apply_decay:
                     changes['curiosity'] = -decay
 
+            # FIX: assertiveness no longer drops on correction/disagreement words
+            # When Lyle pushes back, Sygma should hold her ground, not become more deferential.
+            # Assertiveness rises when she makes a clear committed statement.
             if 'assertiveness' not in changes:
                 if any(k in msg for k in ['great','perfect','exactly','correct','brilliant',
-                                           'good job','thank you','amazing','love it']):
+                                           'good job','thank you','amazing','love it','that works']):
                     changes['assertiveness'] = speed * 0.5
-                elif any(k in msg for k in ['wrong','incorrect','no,','thats not','mistake',
-                                             'broken','doesnt work']):
-                    changes['assertiveness'] = -speed
+                # Committed responses in her output raise assertiveness
+                elif any(k in resp for k in ['i choose','i decide','my answer is','i will',
+                                              'i recommend','i think we should','i prefer']):
+                    changes['assertiveness'] = speed * 0.3
+                elif apply_decay:
+                    changes['assertiveness'] = -decay * 0.5
 
             if 'creativity' not in changes:
                 if any(k in msg for k in ['write','create','story','poem','imagine','design',
@@ -1175,11 +1314,16 @@ Respond as {self.ai_name}. You have agency. Use it.
                 elif apply_decay:
                     changes['creativity'] = -decay
 
-            # ── Apply all changes ─────────────────────────────────────
+            # ── Apply all changes with ceiling dampener ────────────────────────
             for trait, delta in changes.items():
                 if trait not in self.personality:
                     continue
                 old_val = float(self.personality[trait])
+
+                # FIX: ceiling dampener — above 0.85 positive triggers apply at 30% strength
+                # Makes it genuinely hard to reach 1.0 and easy to come back from it
+                if delta > 0 and old_val >= 0.85:
+                    delta = delta * 0.3
 
                 # Decay pulls toward baseline, not past it
                 if delta < 0:
@@ -1196,7 +1340,7 @@ Respond as {self.ai_name}. You have agency. Use it.
                 if abs(actual_change) > 0.001:
                     direction = '+' if actual_change > 0 else ''
                     is_explicit  = abs(delta) >= speed * 2
-                    is_triggered = abs(delta) >= speed
+                    is_triggered = abs(delta) >= speed * 0.5
                     if is_explicit:
                         reason = f"Explicit user instruction: {trait} ({direction}{actual_change:.3f})"
                     elif is_triggered:
@@ -1245,19 +1389,33 @@ Respond as {self.ai_name}. You have agency. Use it.
             """, (value, timestamp, trait))
         self.db.get_connection().commit()
 
-    def log_conversation(self, message: str, response: str, confidence: float, context: Dict = None):
+    def log_conversation(self, message: str, response: str, confidence: float,
+                         context: Dict = None, platform: str = 'main_ui',
+                         sender: str = 'lyle'):
+        """
+        Log a conversation exchange to chat_history.
+
+        platform: 'main_ui' | 'hub_lobby' | 'hub_direct' | 'hub_rejection' | 'hub_event'
+        sender:   'lyle' | AI display name (e.g. 'Blank') for hub messages
+
+        Hub messages are stored with their platform tag but are NEVER returned
+        by get_recent_messages() for the active context. They remain accessible
+        for reference and memory without contaminating active conversations.
+        """
         cursor = self.db.get_connection().cursor()
         timestamp = datetime.now().isoformat()
-        platform = context.get('platform', 'main_ui') if context else 'main_ui'
-        importance = self.calculate_importance(message, response)
+        importance = self.calculate_importance(message, response, platform=platform, sender=sender)
         emotional_weight = sum(self.emotional_state.values()) / len(self.emotional_state)
         context_tags = json.dumps(self.extract_topics(message))
+
+        # Store user/incoming message with sender attribution
+        user_content = f"[{sender}]: {message}" if platform != 'main_ui' else message
 
         cursor.execute("""
             INSERT INTO chat_history
             (timestamp, platform, role, content, importance_score, emotional_weight, context_tags, ai_version)
             VALUES (?, ?, 'user', ?, ?, ?, ?, ?)
-        """, (timestamp, platform, message, importance, emotional_weight, context_tags, self.ai_version))
+        """, (timestamp, platform, user_content, importance, emotional_weight, context_tags, self.ai_version))
 
         cursor.execute("""
             INSERT INTO chat_history
@@ -1267,7 +1425,27 @@ Respond as {self.ai_name}. You have agency. Use it.
 
         self.db.get_connection().commit()
 
-    def calculate_importance(self, message: str, response: str) -> float:
+        # ── v9: trigger background episode summarization ────────────────────
+        # Only trigger episodic summarization for main_ui conversations —
+        # hub messages should not drive episodic memory formation
+        if self.episodic_memory and platform == 'main_ui':
+            try:
+                self.episodic_memory.check_and_summarize(ai_name=self.ai_name)
+            except Exception as _ep_err:
+                print(f'[EPISODIC] Trigger error: {_ep_err}')
+
+    def calculate_importance(self, message: str, response: str,
+                             platform: str = 'main_ui', sender: str = 'lyle') -> float:
+        """
+        Calculate importance score for a conversation exchange.
+
+        Sender weights reflect the 51/49 relationship model:
+          lyle (operator)  — 1.0 multiplier  (primary relationship, full authority)
+          hub AI message   — 0.6 multiplier  (peer influence, significant but not equal)
+          hub rejection    — 0.8 multiplier  (high learning value — intentional feedback)
+          system/event     — 0.3 multiplier  (informational, low personality impact)
+        """
+        # Base importance from content
         importance = 0.5
         high_importance = ['important', 'remember', 'critical', 'essential', 'never forget']
         if any(k in message.lower() for k in high_importance):
@@ -1277,6 +1455,21 @@ Respond as {self.ai_name}. You have agency. Use it.
             importance += 0.2
         if len(message) > 200:
             importance += 0.1
+
+        # Apply sender weight — reflects trust and relationship hierarchy
+        sender_weights = {
+            'lyle':           1.0,
+            'main_ui':        1.0,
+            'hub_rejection':  0.8,   # rejection reasons are high-value feedback
+            'hub_direct':     0.6,
+            'hub_lobby':      0.6,
+            'hub_event':      0.3,
+            'system':         0.3,
+        }
+        # Check platform first, then sender name
+        weight = sender_weights.get(platform, sender_weights.get(sender.lower(), 0.6))
+        importance = importance * weight
+
         return min(1.0, importance)
 
     def extract_topics(self, text: str) -> List[str]:
