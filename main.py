@@ -451,14 +451,7 @@ def chat():
             response_text = _re.sub(
                 r'IMAGE_GEN_NOW:\s*.+?(?:\n|$)', '', response_text
             ).strip()
-            # Strip any fabricated filenames Sygma may have written
-            # (the real filename comes from the [IMG:] tag appended below)
-            response_text = _re.sub(
-                r'`?data/images/generated/[^\s`]+`?', '', response_text
-            ).strip()
-            response_text = _re.sub(
-                r'(?i)the filename is\s*:?\s*', '', response_text
-            ).strip()
+            # Let Sygma's filename description through — she usually gets it right
             if success:
                 response_text += f"\n\n[IMG:/api/images/file/{img_path}]"
 
