@@ -65,8 +65,8 @@ class MoltbookService:
 
     @property
     def enabled(self) -> bool:
-        """Moltbook is enabled if we have an API key. That's it."""
-        return bool(self.api_key)
+        """Moltbook is enabled if we have an API key AND the enabled toggle is on."""
+        return bool(self.api_key) and bool(self.cfg.get('enabled', True))
 
     @property
     def agent_name(self) -> str:

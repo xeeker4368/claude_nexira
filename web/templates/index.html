@@ -1756,6 +1756,14 @@
                         </div>
                     </div>
                     <div style="display:flex;gap:10px;align-items:center">
+                        <label style="display:flex;align-items:center;gap:7px;cursor:pointer" title="Enable/disable Moltbook">
+                            <span style="font-size:12px;color:#5a7080">Enabled</span>
+                            <div id="mbEnabledToggle" onclick="toggleMoltbook()"
+                                 style="width:38px;height:21px;border-radius:11px;background:#1a2a3a;position:relative;cursor:pointer;transition:background 0.2s;border:1px solid rgba(255,255,255,0.08)">
+                                <div id="mbEnabledKnob" style="width:15px;height:15px;border-radius:50%;background:#3a4a5a;position:absolute;top:2px;left:2px;transition:all 0.2s"></div>
+                            </div>
+                            <span id="mbEnabledLabel" style="font-size:12px;color:#5a7080;min-width:20px">Off</span>
+                        </label>
                         <label style="display:flex;align-items:center;gap:7px;cursor:pointer" title="Auto-post journal entries to Moltbook">
                             <span style="font-size:12px;color:#5a7080">Auto-diary</span>
                             <div id="mbDiaryToggle" onclick="toggleMoltbookDiary()"
@@ -1766,6 +1774,7 @@
                         </label>
                     </div>
                 </div>
+                <button id="mbSaveBtn" class="action-btn" onclick="saveMoltbookSettings()" style="display:none;width:100%;margin-bottom:16px;padding:10px;font-size:13px;font-weight:600">Save Settings</button>
 
                 <!-- API Key / Registration -->
                 <div style="background:#0c1219;border:1px solid rgba(124,58,237,0.2);border-radius:10px;padding:16px;margin-bottom:16px">
@@ -3098,9 +3107,11 @@ async function loadMoltbookStatus() {
         st.textContent = statusText;
         st.style.color = statusColor;
 
-        // Auto-diary toggle
-        _mbDiary = data.auto_post_diary || false;
-        _setToggle('mbDiaryKnob', 'mbDiaryLabel', 'mbDiaryToggle', _mbDiary, '#7c3aed');
+        // Toggles
+        _mbEnabled = data.enabled || false;
+        _mbDiary   = data.auto_post_diary || false;
+        _setToggle('mbEnabledKnob', 'mbEnabledLabel', 'mbEnabledToggle', _mbEnabled, '#00d4ff');
+        _setToggle('mbDiaryKnob',   'mbDiaryLabel',   'mbDiaryToggle',   _mbDiary,   '#7c3aed');
 
         // Show claim section if registered but not claimed
         const claimDiv = document.getElementById('moltbookClaim');
@@ -3251,6 +3262,7 @@ async function moltbookPostDiary() {
     } catch(e) { res.innerHTML = `<span style="color:#ff4d6d">✗ ${e.message}</span>`; }
 }
 
+let _mbEnabled = false;
 let _mbDiary   = false;
 
 function _setToggle(knobId, labelId, trackId, state, onColor) {
@@ -3264,13 +3276,32 @@ function _setToggle(knobId, labelId, trackId, state, onColor) {
     if (label) { label.textContent = state ? 'On' : 'Off'; label.style.color = state ? onColor : '#5a7080'; }
 }
 
-async function toggleMoltbookDiary() {
+function toggleMoltbook() {
+    _mbEnabled = !_mbEnabled;
+    _setToggle('mbEnabledKnob','mbEnabledLabel','mbEnabledToggle', _mbEnabled, '#00d4ff');
+    _showMbUnsaved();
+}
+
+function toggleMoltbookDiary() {
     _mbDiary = !_mbDiary;
     _setToggle('mbDiaryKnob','mbDiaryLabel','mbDiaryToggle', _mbDiary, '#7c3aed');
+    _showMbUnsaved();
+}
+
+function _showMbUnsaved() {
+    const btn = document.getElementById('mbSaveBtn');
+    if (btn) { btn.style.display = 'block'; btn.textContent = 'Save Settings'; btn.style.background = 'rgba(251,191,36,0.2)'; btn.style.borderColor = 'rgba(251,191,36,0.5)'; btn.style.color = '#fbbf24'; }
+}
+
+async function saveMoltbookSettings() {
+    const btn = document.getElementById('mbSaveBtn');
+    if (btn) btn.textContent = 'Saving...';
     await fetch('/api/moltbook/config', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({auto_post_diary: _mbDiary})
+        body: JSON.stringify({enabled: _mbEnabled, auto_post_diary: _mbDiary})
     });
+    if (btn) { btn.textContent = '\u2713 Saved'; btn.style.background = 'rgba(0,255,163,0.15)'; btn.style.borderColor = 'rgba(0,255,163,0.4)'; btn.style.color = '#00ffa3'; }
+    setTimeout(() => { if (btn) btn.style.display = 'none'; }, 2000);
 }
 
 

@@ -1291,14 +1291,22 @@ def force_evolve():
 
 @app.route('/api/moltbook/status', methods=['GET'])
 def moltbook_status():
-    """Get Moltbook connection status"""
+    """Get Moltbook connection status — reads directly from config"""
+    mb_cfg = config.get('moltbook', {})
+    has_key = bool(mb_cfg.get('api_key', '').strip())
     try:
         mb = background_scheduler.moltbook if background_scheduler else None
-    except Exception as e:
-        return jsonify({'available': False, 'error': str(e)})
-    if not mb:
-        return jsonify({'available': False, 'error': 'Moltbook service not initialised'})
-    return jsonify(mb.status())
+    except Exception:
+        mb = None
+    return jsonify({
+        'available':       mb is not None,
+        'enabled':         mb_cfg.get('enabled', True),
+        'has_api_key':     has_key,
+        'agent_name':      mb_cfg.get('agent_name', ''),
+        'claimed':         mb_cfg.get('claimed', False),
+        'claim_url':       mb_cfg.get('claim_url', ''),
+        'auto_post_diary': mb_cfg.get('auto_post_diary', False),
+    })
 
 @app.route('/api/moltbook/register', methods=['POST'])
 def moltbook_register():
@@ -1692,10 +1700,12 @@ def moltbook_save_key():
 
 @app.route('/api/moltbook/config', methods=['POST'])
 def moltbook_config():
-    """Save Moltbook settings (auto_post_diary toggle)"""
+    """Save Moltbook settings"""
     mb = background_scheduler.moltbook if background_scheduler else None
     data = request.json or {}
     updates = {}
+    if 'enabled' in data:
+        updates['enabled'] = bool(data['enabled'])
     if 'auto_post_diary' in data:
         updates['auto_post_diary'] = bool(data['auto_post_diary'])
 
