@@ -1756,14 +1756,6 @@
                         </div>
                     </div>
                     <div style="display:flex;gap:10px;align-items:center">
-                        <label style="display:flex;align-items:center;gap:7px;cursor:pointer" title="Enable/disable Moltbook">
-                            <span style="font-size:12px;color:#5a7080">Enabled</span>
-                            <div id="mbEnabledToggle" onclick="toggleMoltbook()"
-                                 style="width:38px;height:21px;border-radius:11px;background:#1a2a3a;position:relative;cursor:pointer;transition:background 0.2s;border:1px solid rgba(255,255,255,0.08)">
-                                <div id="mbEnabledKnob" style="width:15px;height:15px;border-radius:50%;background:#3a4a5a;position:absolute;top:2px;left:2px;transition:all 0.2s"></div>
-                            </div>
-                            <span id="mbEnabledLabel" style="font-size:12px;color:#5a7080;min-width:20px">Off</span>
-                        </label>
                         <label style="display:flex;align-items:center;gap:7px;cursor:pointer" title="Auto-post journal entries to Moltbook">
                             <span style="font-size:12px;color:#5a7080">Auto-diary</span>
                             <div id="mbDiaryToggle" onclick="toggleMoltbookDiary()"
@@ -3092,25 +3084,23 @@ async function loadMoltbookStatus() {
         document.getElementById('mbAgentName').textContent =
             data.agent_name || (data.has_api_key ? 'Unknown' : '—');
 
-        // Status text
-        let statusText = 'Not configured';
+        // Status — enabled = has API key
+        let statusText = 'No API key configured';
         let statusColor = '#5a7080';
         if (data.has_api_key && data.claimed) {
             statusText = '✓ Connected & Claimed';
             statusColor = '#00ffa3';
         } else if (data.has_api_key && !data.claimed) {
-            statusText = '⏳ Registered, not yet claimed';
+            statusText = '⏳ Has key, not yet claimed';
             statusColor = '#fbbf24';
         }
         const st = document.getElementById('mbStatusText');
         st.textContent = statusText;
         st.style.color = statusColor;
 
-        // Toggles
-        _mbEnabled = data.enabled || false;
-        _mbDiary   = data.auto_post_diary || false;
-        _setToggle('mbEnabledKnob', 'mbEnabledLabel', 'mbEnabledToggle', _mbEnabled, '#00d4ff');
-        _setToggle('mbDiaryKnob',   'mbDiaryLabel',   'mbDiaryToggle',   _mbDiary,   '#7c3aed');
+        // Auto-diary toggle
+        _mbDiary = data.auto_post_diary || false;
+        _setToggle('mbDiaryKnob', 'mbDiaryLabel', 'mbDiaryToggle', _mbDiary, '#7c3aed');
 
         // Show claim section if registered but not claimed
         const claimDiv = document.getElementById('moltbookClaim');
@@ -3261,7 +3251,6 @@ async function moltbookPostDiary() {
     } catch(e) { res.innerHTML = `<span style="color:#ff4d6d">✗ ${e.message}</span>`; }
 }
 
-let _mbEnabled = false;
 let _mbDiary   = false;
 
 function _setToggle(knobId, labelId, trackId, state, onColor) {
@@ -3275,28 +3264,12 @@ function _setToggle(knobId, labelId, trackId, state, onColor) {
     if (label) { label.textContent = state ? 'On' : 'Off'; label.style.color = state ? onColor : '#5a7080'; }
 }
 
-async function toggleMoltbook() {
-    _mbEnabled = !_mbEnabled;
-    _setToggle('mbEnabledKnob','mbEnabledLabel','mbEnabledToggle', _mbEnabled, '#00d4ff');
-    await fetch('/api/moltbook/config', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({enabled: _mbEnabled, auto_post_diary: _mbDiary})
-    });
-}
-
 async function toggleMoltbookDiary() {
     _mbDiary = !_mbDiary;
     _setToggle('mbDiaryKnob','mbDiaryLabel','mbDiaryToggle', _mbDiary, '#7c3aed');
     await fetch('/api/moltbook/config', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({enabled: _mbEnabled, auto_post_diary: _mbDiary})
-    });
-}
-
-async function saveMoltbookConfig() {
-    await fetch('/api/moltbook/config', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({enabled: _mbEnabled, auto_post_diary: _mbDiary})
+        body: JSON.stringify({auto_post_diary: _mbDiary})
     });
 }
 

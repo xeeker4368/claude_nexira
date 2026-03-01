@@ -9,6 +9,7 @@ Runs in a daemon thread and orchestrates all Phase 2 background activity:
 - Idle time: Curiosity queue processing
 """
 
+import os
 import time
 import threading
 from datetime import datetime
@@ -42,7 +43,7 @@ except ImportError as _p4e:
 
 # Phase 5: Moltbook (graceful fallback)
 try:
-    from moltbook_service import MoltbookService
+    from src.services.moltbook_service import MoltbookService
     MOLTBOOK_AVAILABLE = True
 except ImportError as _mbe:
     MoltbookService = None
@@ -107,8 +108,18 @@ class BackgroundTaskScheduler:
 
         # Phase 5: Moltbook
         if MOLTBOOK_AVAILABLE:
-            self.moltbook = MoltbookService(lambda: config, db_connection,
-                                            encryption=self.encryption)
+            def _save_config():
+                """Persist config dict to disk."""
+                import json as _json
+                _path = os.path.join(base_dir, 'config', 'default_config.json')
+                try:
+                    with open(_path, 'w') as _f:
+                        _json.dump(config, _f, indent=2)
+                except Exception as _e:
+                    print(f"⚠️  Config save error: {_e}")
+
+            self.moltbook = MoltbookService(lambda: config, _save_config,
+                                            db_connection)
             print("✓ Phase 5 Moltbook service initialised")
             self.night_consolidation.moltbook = self.moltbook
         else:

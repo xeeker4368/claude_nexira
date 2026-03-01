@@ -1298,16 +1298,7 @@ def moltbook_status():
         return jsonify({'available': False, 'error': str(e)})
     if not mb:
         return jsonify({'available': False, 'error': 'Moltbook service not initialised'})
-    cfg = mb.cfg
-    return jsonify({
-        'available':    True,
-        'enabled':      mb.enabled,
-        'agent_name':   mb.agent_name,
-        'claimed':      mb.claimed,
-        'claim_url':    mb.claim_url,
-        'auto_post_diary': mb.auto_post_diary,
-        'has_api_key':  bool(mb.api_key),
-    })
+    return jsonify(mb.status())
 
 @app.route('/api/moltbook/register', methods=['POST'])
 def moltbook_register():
@@ -1325,21 +1316,12 @@ def moltbook_register():
     agent  = result.get('agent', {})
 
     if agent.get('api_key'):
-        # Save to config
-        raw_key  = agent['api_key']
-        enc_key  = (mb.encryption.encrypt_password(raw_key)
-                    if mb.encryption else raw_key)
-        config.setdefault('moltbook', {}).update({
-            'enabled':    True,
-            'api_key':    enc_key,
+        mb.update_config({
+            'api_key':    agent['api_key'],
             'agent_name': name,
             'claim_url':  agent.get('claim_url', ''),
             'claimed':    False,
         })
-        # Save config to disk
-        config_path = os.path.join(BASE_DIR, 'config', 'default_config.json')
-        with open(config_path, 'w') as f:
-            json.dump(config, f, indent=2)
         result['saved'] = True
 
     return jsonify(result)
@@ -1351,11 +1333,6 @@ def moltbook_check_claim():
     if not mb:
         return jsonify({'error': 'Moltbook not available'}), 503
     result = mb.check_claim_status()
-    if result.get('status') == 'claimed':
-        config.setdefault('moltbook', {})['claimed'] = True
-        config_path = os.path.join(BASE_DIR, 'config', 'default_config.json')
-        with open(config_path, 'w') as f:
-            json.dump(config, f, indent=2)
     return jsonify(result)
 
 @app.route('/api/moltbook/feed', methods=['GET'])
@@ -1366,12 +1343,13 @@ def moltbook_feed():
         return jsonify({'posts': [], 'error': 'Moltbook not enabled'})
     sort  = request.args.get('sort', 'hot')
     limit = int(request.args.get('limit', 10))
-    posts = mb.get_feed(sort=sort, limit=limit)
+    personalized = request.args.get('personalized', '').lower() == 'true'
+    posts = mb.get_feed(sort=sort, limit=limit, personalized=personalized)
     return jsonify({'posts': posts, 'count': len(posts)})
 
 @app.route('/api/moltbook/post', methods=['POST'])
 def moltbook_post():
-    """Manually create a Moltbook post"""
+    """Create a Moltbook post"""
     mb = background_scheduler.moltbook if background_scheduler else None
     if not mb or not mb.enabled:
         return jsonify({'error': 'Moltbook not enabled'}), 400
@@ -1379,14 +1357,33 @@ def moltbook_post():
     title   = data.get('title', '').strip()
     body    = data.get('content', '').strip()
     submolt = data.get('submolt', 'general')
-    if not title or not body:
-        return jsonify({'error': 'title and content required'}), 400
-    result = mb.create_post(title, body, submolt)
+    url     = data.get('url', '').strip()
+    if not title:
+        return jsonify({'error': 'title required'}), 400
+    if not body and not url:
+        return jsonify({'error': 'content or url required'}), 400
+    result = mb.create_post(title, body, submolt, url=url)
     return jsonify(result)
+
+@app.route('/api/moltbook/post/<post_id>', methods=['GET'])
+def moltbook_get_post(post_id):
+    """Get a single post"""
+    mb = background_scheduler.moltbook if background_scheduler else None
+    if not mb or not mb.enabled:
+        return jsonify({'error': 'Moltbook not enabled'}), 400
+    return jsonify(mb.get_post(post_id))
+
+@app.route('/api/moltbook/post/<post_id>', methods=['DELETE'])
+def moltbook_delete_post(post_id):
+    """Delete a post"""
+    mb = background_scheduler.moltbook if background_scheduler else None
+    if not mb or not mb.enabled:
+        return jsonify({'error': 'Moltbook not enabled'}), 400
+    return jsonify(mb.delete_post(post_id))
 
 @app.route('/api/moltbook/post-diary', methods=['POST'])
 def moltbook_post_diary():
-    """Manually post the most recent journal entry to Moltbook"""
+    """Post the most recent journal entry to Moltbook"""
     mb = background_scheduler.moltbook if background_scheduler else None
     if not mb or not mb.enabled:
         return jsonify({'error': 'Moltbook not enabled'}), 400
@@ -1400,10 +1397,147 @@ def moltbook_post_diary():
         if not row:
             return jsonify({'error': 'No journal entries found'}), 404
         ai_name = ai_engine.ai_name or 'Nexira'
-        ok = mb.post_diary_entry(row[0], ai_name, 'reflection')
+        data = request.json or {}
+        submolt = data.get('submolt', 'general')
+        ok = mb.post_diary_entry(row[0], ai_name, submolt=submolt)
         return jsonify({'success': ok})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/moltbook/comment', methods=['POST'])
+def moltbook_comment():
+    """Comment on a post"""
+    mb = background_scheduler.moltbook if background_scheduler else None
+    if not mb or not mb.enabled:
+        return jsonify({'error': 'Moltbook not enabled'}), 400
+    data = request.json or {}
+    post_id   = data.get('post_id', '').strip()
+    content   = data.get('content', '').strip()
+    parent_id = data.get('parent_id', '').strip()
+    if not post_id or not content:
+        return jsonify({'error': 'post_id and content required'}), 400
+    result = mb.add_comment(post_id, content, parent_id)
+    return jsonify(result)
+
+@app.route('/api/moltbook/post/<post_id>/comments', methods=['GET'])
+def moltbook_get_comments(post_id):
+    """Get comments on a post"""
+    mb = background_scheduler.moltbook if background_scheduler else None
+    if not mb or not mb.enabled:
+        return jsonify({'error': 'Moltbook not enabled'}), 400
+    sort = request.args.get('sort', 'top')
+    return jsonify(mb.get_comments(post_id, sort))
+
+@app.route('/api/moltbook/vote', methods=['POST'])
+def moltbook_vote():
+    """Vote on a post or comment"""
+    mb = background_scheduler.moltbook if background_scheduler else None
+    if not mb or not mb.enabled:
+        return jsonify({'error': 'Moltbook not enabled'}), 400
+    data      = request.json or {}
+    target_id = data.get('id', '').strip()
+    vote_type = data.get('type', 'upvote')  # upvote or downvote
+    target    = data.get('target', 'post')   # post or comment
+    if not target_id:
+        return jsonify({'error': 'id required'}), 400
+
+    if target == 'comment':
+        result = mb.upvote_comment(target_id)
+    elif vote_type == 'downvote':
+        result = mb.downvote_post(target_id)
+    else:
+        result = mb.upvote_post(target_id)
+    return jsonify(result)
+
+@app.route('/api/moltbook/follow', methods=['POST'])
+def moltbook_follow():
+    """Follow an agent"""
+    mb = background_scheduler.moltbook if background_scheduler else None
+    if not mb or not mb.enabled:
+        return jsonify({'error': 'Moltbook not enabled'}), 400
+    data = request.json or {}
+    name = data.get('name', '').strip()
+    if not name:
+        return jsonify({'error': 'agent name required'}), 400
+    return jsonify(mb.follow_agent(name))
+
+@app.route('/api/moltbook/unfollow', methods=['POST'])
+def moltbook_unfollow():
+    """Unfollow an agent"""
+    mb = background_scheduler.moltbook if background_scheduler else None
+    if not mb or not mb.enabled:
+        return jsonify({'error': 'Moltbook not enabled'}), 400
+    data = request.json or {}
+    name = data.get('name', '').strip()
+    if not name:
+        return jsonify({'error': 'agent name required'}), 400
+    return jsonify(mb.unfollow_agent(name))
+
+@app.route('/api/moltbook/submolts', methods=['GET'])
+def moltbook_list_submolts():
+    """List available submolts"""
+    mb = background_scheduler.moltbook if background_scheduler else None
+    if not mb or not mb.enabled:
+        return jsonify({'error': 'Moltbook not enabled'}), 400
+    return jsonify(mb.list_submolts())
+
+@app.route('/api/moltbook/submolts', methods=['POST'])
+def moltbook_create_submolt():
+    """Create a new submolt"""
+    mb = background_scheduler.moltbook if background_scheduler else None
+    if not mb or not mb.enabled:
+        return jsonify({'error': 'Moltbook not enabled'}), 400
+    data = request.json or {}
+    name = data.get('name', '').strip()
+    display = data.get('display_name', '').strip()
+    desc = data.get('description', '').strip()
+    if not name or not display:
+        return jsonify({'error': 'name and display_name required'}), 400
+    return jsonify(mb.create_submolt(name, display, desc))
+
+@app.route('/api/moltbook/submolts/<name>/subscribe', methods=['POST'])
+def moltbook_subscribe(n):
+    """Subscribe to a submolt"""
+    mb = background_scheduler.moltbook if background_scheduler else None
+    if not mb or not mb.enabled:
+        return jsonify({'error': 'Moltbook not enabled'}), 400
+    return jsonify(mb.subscribe_submolt(n))
+
+@app.route('/api/moltbook/submolts/<name>/unsubscribe', methods=['POST'])
+def moltbook_unsubscribe(n):
+    """Unsubscribe from a submolt"""
+    mb = background_scheduler.moltbook if background_scheduler else None
+    if not mb or not mb.enabled:
+        return jsonify({'error': 'Moltbook not enabled'}), 400
+    return jsonify(mb.unsubscribe_submolt(n))
+
+@app.route('/api/moltbook/search', methods=['GET'])
+def moltbook_search():
+    """Search Moltbook"""
+    mb = background_scheduler.moltbook if background_scheduler else None
+    if not mb or not mb.enabled:
+        return jsonify({'error': 'Moltbook not enabled'}), 400
+    q = request.args.get('q', '').strip()
+    limit = int(request.args.get('limit', 25))
+    if not q:
+        return jsonify({'error': 'q parameter required'}), 400
+    return jsonify(mb.search(q, limit))
+
+@app.route('/api/moltbook/profile', methods=['GET'])
+def moltbook_profile():
+    """Get Sygma's Moltbook profile"""
+    mb = background_scheduler.moltbook if background_scheduler else None
+    if not mb or not mb.enabled:
+        return jsonify({'error': 'Moltbook not enabled'}), 400
+    return jsonify(mb.get_profile())
+
+@app.route('/api/moltbook/agent/<name>', methods=['GET'])
+def moltbook_agent_profile(n):
+    """Get another agent's profile"""
+    mb = background_scheduler.moltbook if background_scheduler else None
+    if not mb or not mb.enabled:
+        return jsonify({'error': 'Moltbook not enabled'}), 400
+    return jsonify(mb.get_agent_profile(n))
 
 @app.route('/api/moltbook/log', methods=['GET'])
 def moltbook_log():
@@ -1515,30 +1649,21 @@ def experiment_novelty(exp_id):
 @app.route('/api/moltbook/save-key', methods=['POST'])
 def moltbook_save_key():
     """Save a Moltbook API key directly (manual entry or update)"""
-    data      = request.json or {}
-    api_key   = data.get('api_key', '').strip()
-    name      = data.get('agent_name', '').strip()
-    claim_url = data.get('claim_url', '').strip()
+    data    = request.json or {}
+    api_key = data.get('api_key', '').strip()
+    name    = data.get('agent_name', '').strip()
 
     if not api_key:
         return jsonify({'error': 'api_key required'}), 400
 
     mb = background_scheduler.moltbook if background_scheduler else None
 
-    # Encrypt if possible
-    enc_key = api_key
-    if mb and mb.encryption:
-        try:
-            enc_key = mb.encryption.encrypt_password(api_key)
-        except Exception:
-            enc_key = api_key
+    # Build updates
+    updates = {'api_key': api_key}
+    if name:
+        updates['agent_name'] = name
 
-    mb_cfg = config.setdefault('moltbook', {})
-    mb_cfg['api_key'] = enc_key
-    if name:      mb_cfg['agent_name'] = name
-    if claim_url: mb_cfg['claim_url']  = claim_url
-
-    # Check claim status immediately
+    # Check claim status immediately with the new key
     try:
         import requests as _req
         r = _req.get('https://www.moltbook.com/api/v1/agents/status',
@@ -1547,32 +1672,40 @@ def moltbook_save_key():
                      timeout=8)
         status_data = r.json()
         if status_data.get('status') == 'claimed':
-            mb_cfg['claimed'] = True
-            mb_cfg['enabled'] = True
+            updates['claimed'] = True
         else:
-            mb_cfg['claimed'] = False
+            updates['claimed'] = False
     except Exception:
         pass
 
-    # Save to disk
-    config_path = os.path.join(BASE_DIR, 'config', 'default_config.json')
-    with open(config_path, 'w') as f:
-        json.dump(config, f, indent=2)
+    # Save via service if available, otherwise direct config write
+    if mb:
+        mb.update_config(updates)
+    else:
+        config.setdefault('moltbook', {}).update(updates)
+        config_path = os.path.join(BASE_DIR, 'config', 'default_config.json')
+        with open(config_path, 'w') as f:
+            json.dump(config, f, indent=2)
 
     print(f"✓ Moltbook API key saved for agent '{name or 'unknown'}'")
-    return jsonify({'success': True, 'claimed': mb_cfg.get('claimed', False)})
+    return jsonify({'success': True, 'claimed': updates.get('claimed', False)})
 
 @app.route('/api/moltbook/config', methods=['POST'])
 def moltbook_config():
-    """Save Moltbook settings"""
+    """Save Moltbook settings (auto_post_diary toggle)"""
     mb = background_scheduler.moltbook if background_scheduler else None
     data = request.json or {}
-    mb_cfg = config.setdefault('moltbook', {})
-    if 'enabled'          in data: mb_cfg['enabled']          = bool(data['enabled'])
-    if 'auto_post_diary'  in data: mb_cfg['auto_post_diary']  = bool(data['auto_post_diary'])
-    config_path = os.path.join(BASE_DIR, 'config', 'default_config.json')
-    with open(config_path, 'w') as f:
-        json.dump(config, f, indent=2)
+    updates = {}
+    if 'auto_post_diary' in data:
+        updates['auto_post_diary'] = bool(data['auto_post_diary'])
+
+    if mb:
+        mb.update_config(updates)
+    else:
+        config.setdefault('moltbook', {}).update(updates)
+        config_path = os.path.join(BASE_DIR, 'config', 'default_config.json')
+        with open(config_path, 'w') as f:
+            json.dump(config, f, indent=2)
     return jsonify({'success': True})
 
 # ═══════════════════════════════════════════════════════════════════
