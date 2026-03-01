@@ -607,6 +607,18 @@ def chat():
         if extras_str:
             nlog(f"   {extras_str}")
 
+        # Update DB if response_text was modified by action triggers (images, experiments, etc)
+        if actions:
+            try:
+                conn = ai_engine.db.get_connection()
+                conn.execute(
+                    "UPDATE chat_history SET content = ? WHERE role='assistant' AND rowid = (SELECT MAX(rowid) FROM chat_history WHERE role='assistant')",
+                    (response_text,)
+                )
+                conn.commit()
+            except Exception as ue:
+                print(f"⚠️  Could not update chat_history with action results: {ue}")
+
         return jsonify({
             'response':   response_text,
             'confidence': confidence,
