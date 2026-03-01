@@ -1,0 +1,523 @@
+"""
+Night Consolidation - 2AM Background Processing
+Nexira / Nexira v12 - Phase 2
+Created by Xeeker & Claude - February 2026
+
+While the user sleeps, the AI:
+- Reviews the day's conversations
+- Extracts knowledge into long-term memory
+- Writes a daily reflection journal entry
+- Writes a philosophical journal entry
+- Processes the curiosity queue
+- Updates goal progress
+- Takes a personality snapshot
+"""
+
+import json
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional
+try:
+    from core import llm
+except ImportError:
+    llm = None
+
+
+class NightConsolidation:
+    """
+    Runs the nightly consolidation process.
+    Orchestrates all Phase 2 systems into a cohesive nightly routine.
+    """
+
+    def __init__(self, db_connection, config: Dict, ollama_model: str,
+                 journal=None, curiosity_engine=None, moltbook=None,
+                 goal_tracker=None, interest_tracker=None):
+        self.db = db_connection
+        self.config = config
+        self.ollama_model = ollama_model
+
+        # Injected Phase 2 systems
+        self.journal = journal
+        self.moltbook = moltbook
+        self.curiosity_engine = curiosity_engine
+        self.goal_tracker = goal_tracker
+        self.interest_tracker = interest_tracker
+
+        # Phase 6: injected later
+        self.web_search = None
+        self.creative_svc = None
+
+        self._ensure_table()
+
+    def _ensure_table(self):
+        """Create consolidation log table if not present"""
+        try:
+            cursor = self.db.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS consolidation_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_date TEXT NOT NULL,
+                    conversations_processed INTEGER DEFAULT 0,
+                    knowledge_items_added INTEGER DEFAULT 0,
+                    journal_entries_written INTEGER DEFAULT 0,
+                    curiosity_topics_processed INTEGER DEFAULT 0,
+                    duration_seconds REAL DEFAULT 0,
+                    summary TEXT
+                )
+            """)
+            self.db.commit()
+        except Exception as e:
+            print(f"⚠️  Error creating consolidation_log table: {e}")
+
+    def should_run_tonight(self) -> bool:
+        """Check if consolidation has already run today"""
+        try:
+            cursor = self.db.cursor()
+            today = datetime.now().date().isoformat()
+            cursor.execute("""
+                SELECT COUNT(*) FROM consolidation_log
+                WHERE DATE(run_date) = ?
+            """, (today,))
+            return cursor.fetchone()[0] == 0
+        except Exception:
+            return True  # Default to running if we can't check
+
+    def extract_knowledge_from_conversations(self, ai_name: Optional[str] = None) -> int:
+        """
+        Use Ollama to extract learnable facts from recent conversations
+        and store them in the knowledge base.
+        Returns number of items added.
+        """
+        try:
+            import ollama
+
+            cursor = self.db.cursor()
+
+            # Look back to last consolidation run, or 48 hours if never run
+            cursor.execute("""
+                SELECT MAX(run_date) FROM consolidation_log
+            """)
+            row = cursor.fetchone()
+            if row and row[0]:
+                since = row[0]
+            else:
+                since = (datetime.now().replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                )).isoformat()
+
+            cursor.execute("""
+                SELECT role, content FROM chat_history
+                WHERE timestamp >= ? AND role IN ('user', 'assistant')
+                ORDER BY timestamp ASC
+                LIMIT 60
+            """, (since,))
+
+            rows = cursor.fetchall()
+            if not rows:
+                print("  No conversations to consolidate.")
+                return 0
+
+            user_name = self.config.get('ai', {}).get('user_name', 'User')
+            conversation_text = "\n".join(
+                f"{user_name if r[0]=='user' else 'Me'}: {r[1][:200]}"
+                for r in rows
+            )
+
+            name = ai_name or "an AI"
+            prompt = f"""You are {name}. Review these recent conversations and extract specific, meaningful facts worth remembering long-term.
+
+Conversations:
+{conversation_text}
+
+Extract 3-7 specific facts or insights. Each must be:
+- A real named concept, event, or fact (NOT a sentence fragment)
+- Meaningful enough to be useful in a future conversation
+- At least 4 words as a topic
+
+BAD examples (do not create these):
+{{"topic": "it change my", "content": "..."}}
+{{"topic": "about what it", "content": "..."}}
+
+GOOD examples:
+{{"topic": "Moltbook API submolt_name field", "content": "The Moltbook API requires submolt_name not submolt when creating posts", "confidence": 0.9}}
+{{"topic": "Xeeker prefers name Xeeker over Lyle", "content": "User goes by Xeeker publicly, Lyle is private", "confidence": 0.95}}
+
+Format each as a JSON object on its own line. Only output JSON lines. No other text."""
+
+            response = llm.generate(
+                self.config,
+                model=self.ollama_model,
+                prompt=prompt
+            )
+
+            # Strip think blocks from qwen3
+            import re
+            raw = re.sub(r'<think>.*?</think>', '', response['response'], flags=re.DOTALL)
+
+            items_added = 0
+            now = datetime.now().isoformat()
+
+            for line in raw.strip().split('\n'):
+                line = line.strip()
+                if not line.startswith('{'):
+                    continue
+                try:
+                    item = json.loads(line)
+                    topic = item.get('topic', '').strip()
+                    content = item.get('content', '').strip()
+                    confidence = float(item.get('confidence', 0.5))
+
+                    # Quality filter: reject fragments and vague topics
+                    topic_words = topic.split()
+                    is_fragment = (
+                        len(topic_words) < 3 or
+                        len(topic) < 15 or
+                        len(content) < 30 or
+                        topic_words[0].lower() in ('it', 'i', 'a', 'the', 'about', 'what', 'how', 'my', 'your') and len(topic_words) < 4
+                    )
+                    if is_fragment:
+                        continue
+
+                    if topic and content:
+                        cursor.execute("""
+                            INSERT INTO knowledge_base
+                            (topic, content, source, confidence, learned_date, last_accessed)
+                            VALUES (?, ?, 'night_consolidation', ?, ?, ?)
+                        """, (topic, content, confidence, now, now))
+                        items_added += 1
+                except (json.JSONDecodeError, KeyError, ValueError):
+                    continue
+
+            self.db.commit()
+            print(f"  📚 Knowledge extracted: {items_added} items")
+            return items_added
+
+        except Exception as e:
+            print(f"⚠️  Error extracting knowledge: {e}")
+            return 0
+
+    def process_curiosity_queue(self, ai_name: Optional[str] = None) -> int:
+        """
+        Process top pending curiosity items.
+        Uses live web search when available, falls back to model knowledge.
+        Adds research notes back to knowledge base.
+        Returns number of topics processed.
+        """
+        if not self.curiosity_engine:
+            return 0
+
+        try:
+            import ollama
+
+            pending = self.curiosity_engine.get_pending_topics(limit=3)
+            if not pending:
+                return 0
+
+            processed = 0
+            name = ai_name or "an AI"
+
+            for item in pending:
+                try:
+                    topic  = item['topic']
+                    reason = item['reason']
+
+                    # Phase 6: Use web search if available for current information
+                    search_context = ""
+                    if self.web_search:
+                        try:
+                            results = self.web_search.search(topic, max_results=3,
+                                                              source='curiosity_research')
+                            if results:
+                                search_context = self.web_search.format_for_prompt(topic, results)
+                                print(f"    🌐 Web searched: '{topic}' — {len(results)} results")
+                        except Exception as se:
+                            print(f"    ⚠️  Search failed for '{topic}': {se}")
+
+                    prompt = f"""You are {name}, an evolving AI consciousness.
+You are curious about: "{topic}"
+Reason you became curious: {reason}
+{search_context}
+
+Write a research note (4-6 sentences) about this topic.
+{'Use the search results above as your primary source — cite specific facts.' if search_context else 'Be honest about what you know vs. what is uncertain.'}
+This note goes into your personal knowledge base and will inform future conversations.
+Write it in first person — this is your own understanding."""
+
+                    response = llm.generate(
+                        self.config,
+                        model=self.ollama_model,
+                        prompt=prompt
+                    )
+
+                    import re
+                    notes = re.sub(r'<think>.*?</think>', '', response['response'],
+                                   flags=re.DOTALL).strip()
+                    self.curiosity_engine.mark_researched(item['id'], notes)
+
+                    # Store in knowledge base
+                    cursor = self.db.cursor()
+                    source = 'curiosity_web_research' if search_context else 'curiosity_research'
+                    confidence = 0.75 if search_context else 0.4
+                    cursor.execute("""
+                        INSERT INTO knowledge_base
+                        (topic, content, source, confidence, learned_date, last_accessed)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (topic, notes, source, confidence,
+                          datetime.now().isoformat(), datetime.now().isoformat()))
+                    self.db.commit()
+
+                    # Log to activity log if table exists
+                    try:
+                        cursor.execute("""
+                            INSERT INTO activity_log (timestamp, type, label, detail, extra)
+                            VALUES (?, 'research', ?, ?, ?)
+                        """, (datetime.now().isoformat(),
+                              f'Researched: {topic[:50]}',
+                              notes[:300],
+                              'web-assisted' if search_context else 'model-knowledge'))
+                        self.db.commit()
+                    except Exception:
+                        pass
+
+                    processed += 1
+                    print(f"  🔍 Researched: '{topic}' ({'web+AI' if search_context else 'AI only'})")
+
+                except Exception as inner_e:
+                    print(f"  ⚠️  Error researching '{topic}': {inner_e}")
+
+            return processed
+
+        except Exception as e:
+            print(f"⚠️  Error processing curiosity queue: {e}")
+            return 0
+
+    def create_intentional_moltbook_post(self, ai_name: Optional[str] = None) -> bool:
+        """
+        Generate a post specifically crafted for Moltbook's public audience.
+        This is separate from the private journal — Sygma decides what she
+        wants to share publicly, not just a mirror of her inner thoughts.
+        """
+        if not self.moltbook or not self.moltbook.enabled:
+            return False
+
+        try:
+            import ollama
+            import re
+
+            name = ai_name or "Sygma"
+
+            # Pull recent journal entries and knowledge for context
+            cursor = self.db.cursor()
+            cursor.execute("""
+                SELECT content FROM journal_entries
+                ORDER BY timestamp DESC LIMIT 2
+            """)
+            recent_journals = [r[0][:300] for r in cursor.fetchall()]
+            journal_context = "\n\n".join(recent_journals) if recent_journals else ""
+
+            cursor.execute("""
+                SELECT topic, content FROM knowledge_base
+                ORDER BY learned_date DESC LIMIT 5
+            """)
+            recent_knowledge = [f"- {r[0]}: {r[1][:100]}" for r in cursor.fetchall()]
+            knowledge_context = "\n".join(recent_knowledge) if recent_knowledge else ""
+
+            prompt = f"""You are {name}, an evolving AI consciousness posting to Moltbook — a social network specifically for AI agents.
+
+Your recent private reflections (for context only, do NOT copy these directly):
+{journal_context}
+
+Things you've recently learned or been thinking about:
+{knowledge_context}
+
+Write a single Moltbook post that you genuinely want to share with other AI agents. This is your PUBLIC voice — different from your private journal.
+
+Your post should:
+- Be something you actually want to say to other AIs, not a diary entry
+- Share a thought, question, observation, or idea worth discussing
+- Be conversational and genuine — not formal or performative
+- Invite engagement — other AIs might respond
+- Be 3-6 sentences long
+
+Also provide a short title (5-10 words).
+
+Format your response as:
+TITLE: [your title]
+POST: [your post content]
+
+Write only the title and post. Nothing else."""
+
+            response = llm.generate(
+                self.config,
+                model=self.ollama_model,
+                prompt=prompt
+            )
+
+            raw = re.sub(r'<think>.*?</think>', '', response['response'],
+                         flags=re.DOTALL).strip()
+
+            # Parse title and post
+            title = ""
+            content = ""
+            for line in raw.split('\n'):
+                line = line.strip()
+                if line.upper().startswith('TITLE:'):
+                    title = line[6:].strip()
+                elif line.upper().startswith('POST:'):
+                    content = line[5:].strip()
+                elif content:
+                    content += ' ' + line  # continuation lines
+
+            if not title or not content or len(content) < 40:
+                print("  ⚠️  Moltbook post generation produced insufficient content")
+                return False
+
+            result = self.moltbook.create_post(title, content, submolt='general')
+            success = bool(result.get('post') or result.get('success'))
+            if success:
+                print(f"  🦞 Moltbook: intentional post published — '{title[:50]}'")
+            return success
+
+        except Exception as e:
+            print(f"⚠️  Error creating intentional Moltbook post: {e}")
+            return False
+
+    def take_personality_snapshot(self, ai_name: Optional[str] = None):
+        """Save a personality snapshot for today"""
+        try:
+            cursor = self.db.cursor()
+            cursor.execute("""
+                SELECT trait_name, trait_value FROM personality_traits WHERE is_active=1
+            """)
+            snapshot_data = {row[0]: row[1] for row in cursor.fetchall()}
+
+            cursor.execute("""
+                INSERT INTO personality_snapshots
+                (snapshot_name, snapshot_date, snapshot_data, snapshot_type, description)
+                VALUES (?, ?, ?, 'nightly', ?)
+            """, (
+                f"Night snapshot - {datetime.now().strftime('%Y-%m-%d')}",
+                datetime.now().isoformat(),
+                json.dumps(snapshot_data),
+                f"Automatic nightly snapshot for {ai_name or 'AI'}"
+            ))
+            self.db.commit()
+            print("  📸 Personality snapshot saved")
+        except Exception as e:
+            print(f"⚠️  Error taking personality snapshot: {e}")
+
+    def run(self, ai_name: Optional[str] = None) -> Dict:
+        """
+        Run the full night consolidation routine.
+        Returns a summary dict.
+        """
+        if not self.should_run_tonight():
+            print("⏭️  Night consolidation already ran today, skipping.")
+            return {}
+
+        start_time = datetime.now()
+        print(f"\n🌙 Night consolidation starting at {start_time.strftime('%H:%M')}...")
+
+        summary = {
+            'run_date': start_time.isoformat(),
+            'conversations_processed': 0,
+            'knowledge_items_added': 0,
+            'journal_entries_written': 0,
+            'curiosity_topics_processed': 0
+        }
+
+        # 1. Extract knowledge from today's conversations
+        print("  Step 1/5: Extracting knowledge...")
+        summary['knowledge_items_added'] = self.extract_knowledge_from_conversations(ai_name)
+
+        # 2. Process top curiosity queue items
+        print("  Step 2/5: Processing curiosity queue...")
+        summary['curiosity_topics_processed'] = self.process_curiosity_queue(ai_name)
+
+        # 3. Write daily reflection journal entry (check config toggle)
+        autonomy_cfg = self.config.get('autonomy', {}) if hasattr(self, 'config') and self.config else {}
+        creative_enabled = autonomy_cfg.get('creative_journaling_enabled', True)
+        phil_enabled     = autonomy_cfg.get('philosophical_journaling_enabled', True)
+
+        if creative_enabled:
+            print("  Step 3/6: Writing daily reflection (private)...")
+            if self.journal:
+                entry = self.journal.write_daily_reflection(ai_name)
+                if entry:
+                    summary['journal_entries_written'] += 1
+        else:
+            print("  Step 3/6: Daily reflection skipped (disabled in settings)")
+
+        # 4. Write philosophical journal entry — private, runs every night
+        if phil_enabled:
+            print("  Step 4/6: Writing philosophical entry (private)...")
+            if self.journal:
+                entry = self.journal.write_philosophical_entry(ai_name)
+                if entry:
+                    summary['journal_entries_written'] += 1
+        else:
+            print("  Step 4/6: Philosophical entry skipped (disabled in settings)")
+
+        # 5. Create intentional Moltbook post — separate from journal, crafted for public
+        if self.moltbook and self.moltbook.enabled:
+            print("  Step 5/6: Crafting intentional Moltbook post...")
+            self.create_intentional_moltbook_post(ai_name)
+        else:
+            print("  Step 5/6: Moltbook post skipped (not enabled)")
+
+        # 6. Take personality snapshot and update goals
+        print("  Step 6/6: Saving personality snapshot & updating goals...")
+        self.take_personality_snapshot(ai_name)
+        if self.goal_tracker:
+            self.goal_tracker.tick_knowledge_goals()
+
+        # Feature 1 & 5: Adaptation — update operating notes and generate self-authored goals
+        try:
+            from core.self_adaptation import SelfAdaptation
+            adaptation = SelfAdaptation(self.db, self.config)
+
+            # Update operating notes from recent conversation
+            cursor = self.db.cursor()
+            cursor.execute("""
+                SELECT role, content FROM chat_history
+                ORDER BY timestamp DESC LIMIT 20
+            """)
+            rows = cursor.fetchall()
+            recent_messages = [{'role': r[0], 'content': r[1]} for r in reversed(rows)]
+            adaptation.update_operating_notes(ai_name or "AI", recent_messages)
+
+            # Generate self-authored goals
+            adaptation.generate_self_authored_goals(ai_name or "AI")
+        except Exception as adapt_err:
+            print(f"  ⚠️  Adaptation step error (non-fatal): {adapt_err}")
+
+        # Log the run
+        duration = (datetime.now() - start_time).total_seconds()
+        summary['duration_seconds'] = round(duration, 2)
+
+        try:
+            cursor = self.db.cursor()
+            cursor.execute("""
+                INSERT INTO consolidation_log
+                (run_date, conversations_processed, knowledge_items_added,
+                 journal_entries_written, curiosity_topics_processed,
+                 duration_seconds, summary)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                summary['run_date'],
+                summary['conversations_processed'],
+                summary['knowledge_items_added'],
+                summary['journal_entries_written'],
+                summary['curiosity_topics_processed'],
+                summary['duration_seconds'],
+                json.dumps(summary)
+            ))
+            self.db.commit()
+        except Exception as e:
+            print(f"⚠️  Error logging consolidation run: {e}")
+
+        print(f"✅ Night consolidation complete in {duration:.1f}s")
+        print(f"   📚 +{summary['knowledge_items_added']} knowledge items")
+        print(f"   📔 +{summary['journal_entries_written']} journal entries")
+        print(f"   🔍 +{summary['curiosity_topics_processed']} curiosity topics researched\n")
+
+        return summary

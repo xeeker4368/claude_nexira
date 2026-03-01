@@ -1,0 +1,27 @@
+# Database — never commit Sygma's memories
+data/databases/*.db
+data/databases/*.db-journal
+data/backups/
+
+# Keys and secrets
+data/nexira.key
+config/default_config.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# Images
+data/images/generated/*
+data/images/styled/*
+data/uploads/*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

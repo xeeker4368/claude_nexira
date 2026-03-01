@@ -1,0 +1,57 @@
+# ═══════════════════════════════════════════════════════════
+# Nexira v12 — Python Dependencies
+# Created by Xeeker & Claude — February 2026
+#
+# Install: pip install -r requirements.txt
+# Or just run: ./install.sh (handles everything)
+#
+# For GPU/image generation on NVIDIA:
+#   pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu121
+# ═══════════════════════════════════════════════════════════
+
+# ── Core Web Framework (required) ─────────────────────────
+Flask==3.0.0
+Flask-CORS==4.0.0
+
+# ── AI / LLM (required) ──────────────────────────────────
+ollama>=0.1.6
+
+# ── Networking (required) ─────────────────────────────────
+requests>=2.31.0
+
+# ── Encryption (required for password/journal encryption) ─
+cryptography>=41.0.0
+
+# ── Date/Time Utilities (required) ────────────────────────
+python-dateutil>=2.8.2
+pytz>=2023.3
+
+# ── System Monitoring (required) ──────────────────────────
+psutil>=5.9.6
+
+# ── Utilities (required) ─────────────────────────────────
+python-dotenv>=1.0.0
+croniter>=2.0.1
+
+# ── Document Processing (optional — gracefully disabled) ──
+PyPDF2>=3.0.1
+python-docx>=1.1.0
+Pillow>=10.1.0
+pytesseract>=0.3.10
+
+# ── Email IMAP Monitoring (optional) ─────────────────────
+imapclient>=2.3.1
+
+# ── Web Search (required for curiosity queue) ─────────────
+duckduckgo-search>=4.1.0
+
+# ── GPU / Image Generation (NVIDIA with CUDA) ────────────
+# These are large packages (~2GB). Sygma uses Stable Diffusion
+# for image generation and CLIP for image analysis.
+# The RTX 4060 on Hades handles these fine.
+torch>=2.1.0
+torchvision>=0.16.0
+diffusers>=0.25.0
+transformers>=4.36.0
+accelerate>=0.25.0
+safetensors>=0.4.0
